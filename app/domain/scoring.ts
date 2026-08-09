@@ -38,26 +38,26 @@ export const defaultScoringRules: ScoringRule[] = [
 export type PlayerMatchStats = Record<ScoringStatKey, number>;
 
 export function demoPlayerMatchStats(playerId: string, position: PlayerPosition): PlayerMatchStats {
-  const seed = [...playerId].reduce((total, character, index) => total + character.charCodeAt(0) * (index + 3), 0);
-  const played60 = seed % 5 !== 0;
+  void playerId;
+  void position;
   return {
-    played: played60 ? 0 : 1,
-    played60: played60 ? 1 : 0,
-    goal: seed % (position === "DEL" ? 3 : position === "MED" ? 5 : 11) === 0 ? 1 : 0,
-    assist: seed % 4 === 0 ? 1 : 0,
-    cleanSheet: played60 && seed % 3 === 0 ? 1 : 0,
-    save: position === "POR" ? 2 + seed % 7 : 0,
-    penaltySaved: position === "POR" && seed % 17 === 0 ? 1 : 0,
-    goalsConceded: position === "POR" || position === "DEF" ? seed % 4 : 0,
-    yellowCard: seed % 6 === 0 ? 1 : 0,
-    redCard: seed % 31 === 0 ? 1 : 0,
-    ownGoal: seed % 43 === 0 ? 1 : 0,
-    penaltyMissed: position === "DEL" && seed % 29 === 0 ? 1 : 0,
-    tackleWon: seed % 8,
-    interception: seed % 6,
-    keyPass: seed % 7,
-    bigChanceCreated: seed % 3,
-    playerOfMatch: seed % 19 === 0 ? 1 : 0,
+    played: 0,
+    played60: 0,
+    goal: 0,
+    assist: 0,
+    cleanSheet: 0,
+    save: 0,
+    penaltySaved: 0,
+    goalsConceded: 0,
+    yellowCard: 0,
+    redCard: 0,
+    ownGoal: 0,
+    penaltyMissed: 0,
+    tackleWon: 0,
+    interception: 0,
+    keyPass: 0,
+    bigChanceCreated: 0,
+    playerOfMatch: 0,
   };
 }
 

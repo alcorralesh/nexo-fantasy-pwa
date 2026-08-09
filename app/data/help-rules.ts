@@ -301,6 +301,8 @@ export const helpRules: HelpRule[] = [
       "Si la mejor recomendación está en el mercado, primero debe adquirirse mediante las reglas de la liga; no puede entrar directamente en la alineación.",
       "Debe elegirse un capitán entre los 11 titulares; su multiplicador será configurable por la liga.",
       "La alineación puede editarse hasta un minuto antes del primer partido de la jornada.",
+      "Antes del primer encuentro oficial de la temporada, la Jornada 1 permanece abierta y todas las posteriores figuran únicamente como programadas.",
+      "Una jornada programada nunca muestra una copia cerrada, resultados ni puntos; todos los jugadores permanecen con cero partidos y cero puntos.",
       "Al llegar la hora límite, el backend crea una copia inmutable del once que se utilizará para calcular los puntos.",
       "En cuanto una jornada se bloquea, su alineación pasa a modo consulta y se abre automáticamente el borrador editable de la siguiente jornada.",
       "Equipo permite recorrer todas las jornadas: las anteriores muestran su copia histórica y únicamente la siguiente jornada abierta permite editar.",
@@ -465,6 +467,7 @@ export const helpRules: HelpRule[] = [
     summary: "El cierre consolida puntos, los convierte en saldo deportivo y activa los eventos fantásticos siguientes.",
     rules: [
       "Cada jornada tiene identidad y estado propios: programada, bloqueada, en juego, pendiente de aplazados, cerrada provisionalmente, liquidada o recalculada.",
+      "El estado cerrado o liquidado solo puede alcanzarse después de recibir partidos finalizados del proveedor; la fecha del calendario por sí sola nunca concede puntos.",
       "La jornada se bloquea al comenzar el primer partido que el calendario oficial tenga asignado a ella; se guarda una copia inmutable del once, formación y capitán de cada participante.",
       "Cuando los partidos necesarios figuran como finalizados, el backend consolida estadísticas, calcula puntos con la versión histórica de reglas y genera la clasificación de la jornada.",
       "Por defecto, cada punto confirmado equivale a 0,10 millones del saldo de fichajes de esa liga. La equivalencia, pago mínimo y pago máximo son configurables desde Administración.",

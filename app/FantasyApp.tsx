@@ -31,6 +31,8 @@ import { withBasePath } from "./base-path";
 
 type Section = "inicio" | "equipo" | "tendencias" | "ligas" | "liga" | "perfil" | "ayuda" | "admin";
 type LeagueAreaSection = "resumen" | "equipo" | "mercado" | "jornada" | "clasificacion";
+const CURRENT_MATCHDAY = 1;
+const COMPLETED_MATCHDAYS = new Set<number>();
 type CreateTeamInput = { name: string; competition: CompetitionName };
 type AllocationPresentation = { league: PublicLeagueSummary; team: FantasyTeamSummary; squad: InitialSquad };
 type MarketRules = { maxDebtPercent: number; maxBenchPlayers: number; renewalHours: number; fantasyMatchdayBudget: number; fantasyAllowCopyPrevious: boolean; fantasyAllowRandomWithinBudget: boolean; fantasyAllowRandomUnlimited: boolean; fantasyAllowClear: boolean };
@@ -1761,7 +1763,7 @@ function LeagueOverview({ league, team, squad, budget, isPrivateLeague, privateP
       </article>
       <article className="league-panel matchday-preview"><div><p className="eyebrow">JORNADA 1</p><h2>Empieza el viernes</h2><p>Las estadísticas aparecerán cuando terminen los partidos.</p></div><div className="matchday-time"><strong>6</strong><span>días</span></div><button className="secondary-button" onClick={() => onSectionChange("jornada")}>Ver jornada</button></article>
       {isPrivateLeague ? <article className="league-panel league-activity private-league-activity-preview"><div className="section-title compact"><div><p className="eyebrow">ACTIVIDAD DE LA LIGA</p><h2>Qué hacen tus rivales</h2></div><button className="text-button" onClick={() => setActivityOpen(true)}>Ver todo</button></div>{leagueActivity.slice(0, 3).map((item) => <button key={item.id} onClick={() => setActivityOpen(true)}><span>{item.initials}</span><p><strong>{item.title}</strong><small>{item.actor} · {formatNotificationTime(item.createdAt)}</small></p><b>›</b></button>)}<footer>Las pujas y ofertas activas siguen siendo privadas.</footer></article> : <article className="league-panel league-activity"><div className="section-title compact"><div><p className="eyebrow">ACTIVIDAD</p><h2>Últimos movimientos</h2></div><button className="text-button" onClick={() => notify("Actividad completa")}>Ver todo</button></div><p><span>✓</span><strong>Tu plantilla inicial ha sido confirmada</strong><small>Ahora mismo</small></p><p><span>↗</span><strong>El mercado tiene 5 jugadores disponibles</strong><small>Hace 8 min</small></p><p><span>+</span><strong>Un nuevo participante se ha unido</strong><small>Hace 21 min</small></p></article>}
-      <article className="league-panel nearby-rivals"><div className="section-title compact"><div><p className="eyebrow">TU ZONA DEL RANKING</p><h2>Tus rivales</h2></div><button className="text-button" onClick={() => onSectionChange("clasificacion")}>Ver todos</button></div>{[["RB", "Rayo Blanco", "74 pts"], ["AC", "Atlético Cierzo", "86 pts"], ["UV", "Unión Violeta", "0 pts"]].map((rival, index) => <button key={rival[1]} onClick={() => onSectionChange("clasificacion")}><span>{rival[0]}</span><div><strong>{rival[1]}</strong><small>{index === 2 ? "Justo por debajo" : `${index + 1} posiciones por encima`}</small></div><b>{rival[2]} ›</b></button>)}</article>
+      <article className="league-panel nearby-rivals"><div className="section-title compact"><div><p className="eyebrow">CLASIFICACIÓN INICIAL</p><h2>Todos empiezan de cero</h2></div><button className="text-button" onClick={() => onSectionChange("clasificacion")}>Ver todos</button></div>{[["RB", "Rayo Blanco", "0 pts"], ["AC", "Atlético Cierzo", "0 pts"], ["UV", "Unión Violeta", "0 pts"]].map((rival) => <button key={rival[1]} onClick={() => onSectionChange("clasificacion")}><span>{rival[0]}</span><div><strong>{rival[1]}</strong><small>Sin partidos disputados</small></div><b>{rival[2]} ›</b></button>)}</article>
     </section>
     {activityOpen && <PrivateLeagueActivityDialog events={leagueActivity} leagueName={league.name} onClose={() => setActivityOpen(false)} />}
   </div>;
@@ -1800,7 +1802,7 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, participation
   const [pendingFormation, setPendingFormation] = useState<string | null>(null);
   const [detailPlayerId, setDetailPlayerId] = useState<string | null>(null);
   const [managedBenchPlayerId, setManagedBenchPlayerId] = useState<string | null>(null);
-  const [selectedTeamMatchday, setSelectedTeamMatchday] = useState(5);
+  const [selectedTeamMatchday, setSelectedTeamMatchday] = useState(() => league.mode === "fantasy" ? fantasyEvent?.matchdays[0] ?? CURRENT_MATCHDAY : CURRENT_MATCHDAY);
   const [fantasyCommand, setFantasyCommand] = useState<FantasyBuilderCommand | null>(null);
 
   useEffect(() => {
@@ -1813,7 +1815,7 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, participation
 
   if (!squad) return <section className="league-tab-view"><div className="league-section-heading"><div><p className="eyebrow">ALINEACIÓN DE LA LIGA</p><h2>Mi equipo</h2><p>Los cambios solo afectan a esta liga.</p></div></div><div className="empty-state league-empty"><strong>Plantilla pendiente de sincronización</strong><p>Se mostrará aquí cuando el backend confirme el reparto de esta liga.</p></div></section>;
 
-  if (selectedTeamMatchday < 5) return <LockedTeamMatchdayView squad={squad} competition={league.competition} matchday={selectedTeamMatchday} scoringRules={scoringRules} onSelectMatchday={setSelectedTeamMatchday} />;
+  if (league.mode !== "fantasy" && selectedTeamMatchday !== CURRENT_MATCHDAY) return <ScheduledTeamMatchdayView matchday={selectedTeamMatchday} onSelectMatchday={setSelectedTeamMatchday} />;
   if (league.mode === "fantasy" && fantasyEvent && !fantasyEvent.snapshot) return <FantasyBudgetPending event={fantasyEvent} />;
   if (league.mode === "fantasy") return <>{fantasyEvent?.snapshot && <FantasySnapshotBanner event={fantasyEvent} />}<FantasyQuickTools options={fantasyOptions} onCommand={(type, respectBudget) => setFantasyCommand({ id: crypto.randomUUID(), type, respectBudget })} /><FantasyMatchdayBuilder competition={league.competition} players={marketPlayers} previousPlayerIds={squad.startingPlayerIds} matchdayBudget={fantasyMatchdayBudget} scoringRules={scoringRules} savedLineup={fantasyLineup} command={fantasyCommand} onSave={onSaveFantasyLineup} onSelectMatchday={setSelectedTeamMatchday} notify={notify} /></>;
 
@@ -1845,11 +1847,11 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, participation
   function saveLineup() {
     if (currentStarters.length !== 11 || !captainId) { notify("Completa el once y selecciona capitán"); return; }
     setSaved(true);
-    notify("Borrador de la Jornada 5 guardado");
+    notify(`Borrador de la Jornada ${CURRENT_MATCHDAY} guardado`);
   }
 
   return <section className="league-tab-view lineup-builder">
-    <div className="league-section-heading"><div><p className="eyebrow">JORNADA 5 · BORRADOR ABIERTO</p><h2>Prepara la siguiente jornada</h2><p>La Jornada 4 está bloqueada, pero ya puedes montar el once de la Jornada 5.</p></div><button className="primary-button" onClick={saveLineup}>{saved ? "✓ Alineación guardada" : "Guardar alineación"}</button></div>
+    <div className="league-section-heading"><div><p className="eyebrow">JORNADA {CURRENT_MATCHDAY} · BORRADOR ABIERTO</p><h2>Prepara la primera jornada</h2><p>La temporada todavía no ha comenzado. Puedes modificar este once hasta el cierre oficial.</p></div><button className="primary-button" onClick={saveLineup}>{saved ? "✓ Alineación guardada" : "Guardar alineación"}</button></div>
     <TeamMatchdaySelector selected={selectedTeamMatchday} onSelect={setSelectedTeamMatchday} />
     <div className="lineup-process"><span className="complete">1 <b>Formación</b></span><span className="complete">2 <b>Once</b></span><span className={captainId ? "complete" : ""}>3 <b>Capitán</b></span><span className={saved ? "complete" : ""}>4 <b>Confirmación</b></span></div>
     <div className="formation-picker"><small>FORMACIÓN</small>{Object.keys(formations).map((item) => <button className={formation === item ? "active" : ""} key={item} onClick={() => changeFormation(item)}>{item}</button>)}</div>
@@ -2011,8 +2013,16 @@ function FantasyFormationChangeDialog({ currentFormation, targetFormation, targe
   return <div className="dialog-backdrop formation-backdrop" role="presentation"><section className="team-dialog formation-dialog fantasy-formation-dialog" role="dialog" aria-modal="true" aria-labelledby="fantasy-formation-dialog-title"><div className="dialog-header"><div><p className="eyebrow">CAMBIO DE FORMACIÓN FANTÁSTICA</p><h2 id="fantasy-formation-dialog-title">{currentFormation} → {targetFormation}</h2></div><button className="dialog-close" onClick={onClose} aria-label="Cerrar">×</button></div><div className="fantasy-formation-balance"><span><small>SALDO DISPONIBLE</small><strong>{remaining.toFixed(1).replace(".", ",")} M</strong></span><span><small>JUGADORES</small><strong>{workingIds.length}/11</strong></span></div><div className="formation-change-summary">{(["POR", "DEF", "MED", "DEL"] as PlayerPosition[]).map((position) => <div className={counts[position] === targetQuotas[position] ? "ready" : ""} key={position}><small>{position}</small><strong>{counts[position]} → {targetQuotas[position]}</strong></div>)}</div><div className="formation-change-step"><span>{removing ? "1" : "2"}</span><div><p className="eyebrow">{removing ? "PRIMERO, ELIGE QUIÉN VENDES" : "AHORA, ELIGE A QUIÉN FICHAS"}</p><h3>{removing ? "Libera las plazas que desaparecen" : "Completa la nueva formación"}</h3><p>{removing ? "El precio de cada jugador vuelve inmediatamente al saldo del cambio." : "Puedes elegir cualquier jugador disponible de toda la competición."}</p></div></div>{!removing && !valid && <label className="fantasy-player-search formation-player-search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar entre todos los jugadores" /></label>}<div className="formation-player-grid fantasy-formation-player-grid">{candidates.map((player) => <button disabled={!removing && player.price > remaining} key={player.id} onClick={() => choose(player)}><Avatar label={player.initials} /><div><strong>{player.name}</strong><small>{player.position} · {player.club}</small></div><span>{player.price.toFixed(1).replace(".", ",")} M</span><b>{removing ? "Vender" : "Fichar"}</b></button>)}</div>{!candidates.length && !valid && <div className="formation-empty"><strong>No hay jugadores disponibles con este filtro</strong><small>Prueba otra búsqueda o libera más presupuesto.</small></div>}{valid && <div className="formation-ready"><span>✓</span><div><strong>Nuevo once completo</strong><small>Cumple el {targetFormation} y mantiene {remaining.toFixed(1).replace(".", ",")} M disponibles.</small></div></div>}<div className="dialog-actions"><button className="secondary-button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={!valid} onClick={() => onConfirm(workingIds)}>Aplicar {targetFormation}</button></div></section></div>;
 }
 
-function TeamMatchdaySelector({ selected, onSelect }: { selected: number; onSelect: (matchday: number) => void }) {
-  return <nav className="team-matchday-selector" aria-label="Alineaciones por jornada">{[1,2,3,4,5].map((matchday) => { const editable = matchday === 5; return <button className={`${selected === matchday ? "active" : ""} ${editable ? "draft" : "locked"}`} key={matchday} onClick={() => onSelect(matchday)}><span>{editable ? "✎" : "✓"}</span><div><small>JORNADA {matchday}</small><strong>{editable ? "En preparación" : matchday === 4 ? "Bloqueada · última" : "Cerrada"}</strong></div>{editable ? <em>EDITAR</em> : <em>VER PUNTOS</em>}</button>; })}</nav>;
+function TeamMatchdaySelector({ selected, onSelect, editableMatchday = CURRENT_MATCHDAY }: { selected: number; onSelect: (matchday: number) => void; editableMatchday?: number }) {
+  return <nav className="team-matchday-selector" aria-label="Alineaciones por jornada">{[1,2,3,4,5].map((matchday) => {
+    const completed = COMPLETED_MATCHDAYS.has(matchday);
+    const editable = matchday === editableMatchday;
+    return <button className={`${selected === matchday ? "active" : ""} ${editable ? "draft" : completed ? "locked" : "scheduled"}`} key={matchday} onClick={() => onSelect(matchday)}><span>{editable ? "✎" : completed ? "✓" : "◷"}</span><div><small>JORNADA {matchday}</small><strong>{editable ? "En preparación" : completed ? "Finalizada" : "Programada"}</strong></div>{editable ? <em>EDITAR</em> : completed ? <em>VER PUNTOS</em> : <em>PRÓXIMA</em>}</button>;
+  })}</nav>;
+}
+
+function ScheduledTeamMatchdayView({ matchday, onSelectMatchday }: { matchday: number; onSelectMatchday: (matchday: number) => void }) {
+  return <section className="league-tab-view locked-team-matchday"><div className="league-section-heading"><div><p className="eyebrow">JORNADA {matchday} · PROGRAMADA</p><h2>Todavía no está abierta</h2><p>Esta jornada se podrá preparar cuando el calendario oficial habilite su ventana.</p></div></div><TeamMatchdaySelector selected={matchday} onSelect={onSelectMatchday} /><div className="empty-state league-empty"><strong>Sin alineación ni puntos</strong><p>No se mostrará información deportiva hasta que la jornada corresponda y sus partidos hayan finalizado.</p><button className="primary-button" onClick={() => onSelectMatchday(CURRENT_MATCHDAY)}>Preparar Jornada {CURRENT_MATCHDAY}</button></div></section>;
 }
 
 function LockedTeamMatchdayView({ squad, competition, matchday, scoringRules, onSelectMatchday }: { squad: InitialSquad; competition: CompetitionName; matchday: number; scoringRules: ScoringRule[]; onSelectMatchday: (matchday: number) => void }) {
@@ -2028,10 +2038,8 @@ function LockedTeamMatchdayView({ squad, competition, matchday, scoringRules, on
 }
 
 function playerDemoStats(playerId: string) {
-  const seed = [...playerId].reduce((total, character, index) => total + character.charCodeAt(0) * (index + 1), 0);
-  const matches = 24 + seed % 12;
-  const points = 78 + seed % 91;
-  return { matches, points, average: Number((points / matches).toFixed(1)), form: 55 + seed % 41 };
+  void playerId;
+  return { matches: 0, points: 0, average: 0, form: 0 };
 }
 
 function offerValidityLabel(expiresAt: number, now: number) {
@@ -2109,8 +2117,10 @@ function PlayerDetailSheet({ player, competition, captain = false, matchday = 1,
   const fixture = getNextFixture(competition, player.club);
   const trend = getCompetitionTrends(competition).find((item) => item.id === player.id);
   const stats = playerDemoStats(player.id);
+  const matchCompleted = COMPLETED_MATCHDAYS.has(matchday);
   const matchStats = demoPlayerMatchStats(`${player.id}_j${matchday}`, player.position);
-  const matchScore = calculatePlayerPoints(matchStats, player.position, scoringRules);
+  const calculatedMatchScore = calculatePlayerPoints(matchStats, player.position, scoringRules);
+  const matchScore = matchCompleted ? calculatedMatchScore : { total: 0, breakdown: [] };
   const compatibleBench = bench.filter((item) => item.position === player.position);
   const squadIds = new Set([player.id, ...bench.map((item) => item.id)]);
   const trendById = new Map(getCompetitionTrends(competition).map((item) => [item.id, item]));
@@ -2139,9 +2149,9 @@ function PlayerDetailSheet({ player, competition, captain = false, matchday = 1,
       <nav className="player-detail-tabs" aria-label="Información del jugador"><button className={tab === "summary" ? "active" : ""} onClick={() => setTab("summary")}>Resumen</button><button className={tab === "points" ? "active" : ""} onClick={() => setTab("points")}>Puntos <b>{matchScore.total > 0 ? "+" : ""}{matchScore.total}</b></button></nav>
 
       {tab === "summary" ? <div className="player-summary-layout">
-        <article className="player-stats-card"><div className="sheet-card-heading"><div><p className="eyebrow">TEMPORADA</p><h3>Rendimiento acumulado</h3></div><small>DATOS DEMO</small></div><div className="player-stat-grid"><div><strong>{stats.points}</strong><small>Puntos</small></div><div><strong>{stats.matches}</strong><small>Partidos</small></div><div><strong>{stats.average}</strong><small>Media</small></div><div><strong>{stats.form}</strong><small>Forma</small></div></div>{trend && <TrendBars values={trend.history} />}</article>
+        <article className="player-stats-card"><div className="sheet-card-heading"><div><p className="eyebrow">TEMPORADA</p><h3>Rendimiento acumulado</h3></div><small>SIN PARTIDOS</small></div><div className="player-stat-grid"><div><strong>{stats.points}</strong><small>Puntos</small></div><div><strong>{stats.matches}</strong><small>Partidos</small></div><div><strong>{stats.average}</strong><small>Media</small></div><div><strong>{stats.form}</strong><small>Forma</small></div></div>{COMPLETED_MATCHDAYS.size > 0 && trend && <TrendBars values={trend.history} />}</article>
         <article className={`next-fixture-card ${fixture?.venue === "Casa" ? "home" : "away"}`}><p className="eyebrow">PRÓXIMA JORNADA</p>{fixture ? <><div className="fixture-venue"><span>{fixture.venue === "Casa" ? "⌂" : "↗"}</span><div><small>JORNADA {fixture.matchday}</small><strong>Juega como {fixture.venue.toLowerCase()}</strong></div></div><div className="fixture-opponent"><small>{fixture.venue === "Casa" ? "RECIBE A" : "VISITA A"}</small><strong>{fixture.opponent}</strong><span>{fixture.dateLabel}</span></div></> : <div className="fixture-pending"><strong>Calendario pendiente</strong><p>Se mostrará al sincronizar el próximo partido oficial.</p></div>}</article>
-      </div> : <article className="player-points-card organized"><div className="points-score-header"><div><p className="eyebrow">JORNADA {matchday} · PARTIDO FINALIZADO</p><h3>Cómo consiguió sus puntos</h3><small>Resultado oficial después de la confirmación de la API</small></div><strong className={matchScore.total >= 0 ? "positive" : "negative"}>{matchScore.total > 0 ? "+" : ""}{matchScore.total}<span>puntos</span></strong></div><div className="points-table-head"><span>Estadística</span><span>Dato</span><span>Puntos</span></div><div className="player-points-breakdown">{matchScore.breakdown.map((item) => <p key={item.key}><span>{item.label}<small>{scoringRules.find((rule) => rule.key === item.key)?.providerField}</small></span><b>{item.value}</b><strong className={item.points >= 0 ? "positive" : "negative"}>{item.points > 0 ? "+" : ""}{item.points}</strong></p>)}</div><footer><span>✓</span> Estadísticas y reglas guardadas para poder reproducir este cálculo.</footer></article>}
+      </div> : matchCompleted ? <article className="player-points-card organized"><div className="points-score-header"><div><p className="eyebrow">JORNADA {matchday} · PARTIDO FINALIZADO</p><h3>Cómo consiguió sus puntos</h3><small>Resultado oficial después de la confirmación de la API</small></div><strong className={matchScore.total >= 0 ? "positive" : "negative"}>{matchScore.total > 0 ? "+" : ""}{matchScore.total}<span>puntos</span></strong></div><div className="points-table-head"><span>Estadística</span><span>Dato</span><span>Puntos</span></div><div className="player-points-breakdown">{matchScore.breakdown.map((item) => <p key={item.key}><span>{item.label}<small>{scoringRules.find((rule) => rule.key === item.key)?.providerField}</small></span><b>{item.value}</b><strong className={item.points >= 0 ? "positive" : "negative"}>{item.points > 0 ? "+" : ""}{item.points}</strong></p>)}</div><footer><span>✓</span> Estadísticas y reglas guardadas para poder reproducir este cálculo.</footer></article> : <article className="player-points-card organized"><div className="points-score-header"><div><p className="eyebrow">JORNADA {matchday} · PROGRAMADA</p><h3>Todavía no hay puntos</h3><small>El desglose aparecerá cuando el partido termine y la API confirme sus estadísticas.</small></div><strong>0<span>puntos</span></strong></div></article>}
 
       {readOnly ? <article className="readonly-player-notice"><span>◉</span><div><strong>Vista informativa de Jornada</strong><p>Puedes consultar información y puntos, pero aquí no se permiten cambios de alineación ni operaciones sobre el jugador.</p></div></article> : <>
         <div className="player-sheet-actions"><button className={captain ? "secondary-button full" : "primary-button full"} onClick={() => onCaptain?.()}>{captain ? "✓ Es tu capitán" : "C Hacer capitán"}</button><button className="recommend-button" onClick={() => setRecommendationOpen(true)}><span>✦</span><div><strong>Recomendar sustituto</strong><small>Compara banquillo y mercado</small></div><b>→</b></button></div>
@@ -2349,13 +2359,13 @@ function BidDialog({ player, existingBid, committed, budget, spendingLimit, debt
 
 function LeagueMatchdayView({ squad, competition, scoringRules, settlementRules, onPrepareTeam, notify }: { squad?: InitialSquad; competition: CompetitionName; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; onPrepareTeam: () => void; notify: (message: string) => void }) {
   const matchdays = [
-    { number: 1, status: "Finalizada", date: "16 ago", rank: 9, previousRank: 12, leagueAverage: 47, bestScore: 79, formation: "4-4-2" },
-    { number: 2, status: "Finalizada", date: "23 ago", rank: 6, previousRank: 9, leagueAverage: 52, bestScore: 84, formation: "4-3-3" },
-    { number: 3, status: "Recalculada", date: "30 ago", rank: 4, previousRank: 6, leagueAverage: 49, bestScore: 81, formation: "4-4-2" },
-    { number: 4, status: "Finalizada", date: "6 sep", rank: 3, previousRank: 4, leagueAverage: 51, bestScore: 86, formation: "3-4-3" },
-    { number: 5, status: "Programada", date: "13 sep", rank: 4, previousRank: 4, leagueAverage: 0, bestScore: 0, formation: "4-4-2" },
+    { number: 1, status: "Programada", date: "Pendiente", rank: 1, previousRank: 1, leagueAverage: 0, bestScore: 0, formation: "4-4-2" },
+    { number: 2, status: "Programada", date: "Pendiente", rank: 1, previousRank: 1, leagueAverage: 0, bestScore: 0, formation: "4-4-2" },
+    { number: 3, status: "Programada", date: "Pendiente", rank: 1, previousRank: 1, leagueAverage: 0, bestScore: 0, formation: "4-4-2" },
+    { number: 4, status: "Programada", date: "Pendiente", rank: 1, previousRank: 1, leagueAverage: 0, bestScore: 0, formation: "4-4-2" },
+    { number: 5, status: "Programada", date: "Pendiente", rank: 1, previousRank: 1, leagueAverage: 0, bestScore: 0, formation: "4-4-2" },
   ];
-  const [selectedMatchday, setSelectedMatchday] = useState(4);
+  const [selectedMatchday, setSelectedMatchday] = useState(CURRENT_MATCHDAY);
   const [view, setView] = useState<"points" | "calendar">("points");
   const [selectedPlayer, setSelectedPlayer] = useState<InitialSquadPlayer | null>(null);
   const [expandedFixture, setExpandedFixture] = useState<string | null>(null);
@@ -2374,7 +2384,7 @@ function LeagueMatchdayView({ squad, competition, scoringRules, settlementRules,
   const payout = Math.min(settlementRules.maximumPayout, Math.max(settlementRules.minimumPayout, Math.max(0, teamTotal) * settlementRules.moneyPerPoint));
   const positionChange = selected.previousRank - selected.rank;
   const clubs = Array.from(new Set(competitionPlayers[competition].map((player) => player.club)));
-  const fixtures = Array.from({ length: Math.min(5, Math.max(1, clubs.length)) }, (_, index) => {
+  const fixtures = Array.from({ length: 0 }, (_, index) => {
     const home = clubs[(index * 2 + selected.number) % clubs.length];
     const away = clubs[(index * 2 + selected.number + 1) % clubs.length];
     const id = `j${selected.number}_${index}`;
@@ -2383,8 +2393,8 @@ function LeagueMatchdayView({ squad, competition, scoringRules, settlementRules,
   });
 
   return <section className="league-tab-view matchday-history-view">
-    <div className="league-section-heading"><div><p className="eyebrow">{competition.toUpperCase()} · HISTORIAL</p><h2>Jornada {selected.number}</h2><p>Consulta tu puntuación o el calendario completo de partidos.</p></div><span className={`matchday-status ${selected.status.toLowerCase()}`}>{selected.status === "Recalculada" ? "↻ " : ""}{selected.status.toUpperCase()}</span></div>
-    <section className="overlapping-matchdays"><div className="overlap-heading"><p className="eyebrow">DOS JORNADAS ACTIVAS · CAMBIO DE CALENDARIO</p><h3>Consulta una mientras preparas la siguiente</h3></div><article className="current"><span>J4</span><div><small>CIERRE PROVISIONAL</small><strong>Un partido aplazado sigue pendiente</strong><p>El once está bloqueado y los puntos confirmados ya pueden consultarse.</p></div><button onClick={() => { setSelectedMatchday(4); setView("points"); }}>Ver puntos</button></article><i>+</i><article className="urgent"><span>J5</span><div><small>PARTIDO ADELANTADO · CIERRA HOY 18:30</small><strong>Prepara un once completo para la J5</strong><p>Se bloqueará al comenzar su primer encuentro, aunque la J4 siga abierta.</p></div><button onClick={onPrepareTeam}>Preparar equipo →</button></article><footer><span>⚡ Aviso urgente enviado</span><p>Si no guardas cambios, se aplicará el equipo de respaldo correspondiente a la modalidad.</p></footer></section>
+    <div className="league-section-heading"><div><p className="eyebrow">{competition.toUpperCase()} · JORNADAS</p><h2>Jornada {selected.number}</h2><p>Consulta su estado y prepara el once cuando esté habilitada.</p></div><span className={`matchday-status ${selected.status.toLowerCase()}`}>{selected.status.toUpperCase()}</span></div>
+    <section className="overlapping-matchdays"><div className="overlap-heading"><p className="eyebrow">TEMPORADA TODAVÍA NO INICIADA</p><h3>La Jornada 1 es la única abierta</h3></div><article className="urgent"><span>J1</span><div><small>BORRADOR DISPONIBLE</small><strong>Prepara tu primer once</strong><p>No habrá puntos ni una copia cerrada hasta que comiencen y finalicen los partidos oficiales.</p></div><button onClick={onPrepareTeam}>Preparar equipo →</button></article><footer><span>◷ Calendario pendiente</span><p>Las jornadas posteriores permanecerán programadas hasta recibir fechas oficiales.</p></footer></section>
     <nav className="matchday-selector" aria-label="Seleccionar jornada">{matchdays.map((matchday) => { const closed = matchday.status === "Finalizada" || matchday.status === "Recalculada"; const points = closed ? totalFor(matchday.number) : null; return <button className={selected.number === matchday.number ? "active" : ""} key={matchday.number} onClick={() => { setSelectedMatchday(matchday.number); setSelectedPlayer(null); setExpandedFixture(null); }}><small>J{matchday.number}</small><strong>{points === null ? "—" : points}</strong><span>{matchday.date}</span><i>{matchday.status}</i></button>; })}</nav>
     <nav className="matchday-view-tabs" aria-label="Vista de jornada"><button className={view === "points" ? "active" : ""} onClick={() => setView("points")}><span>◎</span><div><strong>Mi puntuación</strong><small>Once, puntos y clasificación</small></div></button><button className={view === "calendar" ? "active" : ""} onClick={() => setView("calendar")}><span>▦</span><div><strong>Calendario</strong><small>Todos los partidos de la jornada</small></div></button></nav>
 
@@ -2402,10 +2412,10 @@ function LeagueMatchdayView({ squad, competition, scoringRules, settlementRules,
 type RivalTeam = { id: string; initials: string; name: string; manager: string; matchdayPoints: number; totalPoints: number; value: number; position: number; previousPosition: number; form: number[]; rosterOffset: number };
 
 const demoRivals: RivalTeam[] = [
-  { id: "rival_cierzo", initials: "AC", name: "Atlético Cierzo", manager: "Marcos L.", matchdayPoints: 86, totalPoints: 86, value: 91.8, position: 1, previousPosition: 3, form: [48, 62, 57, 74, 86], rosterOffset: 0 },
-  { id: "rival_blanco", initials: "RB", name: "Rayo Blanco", manager: "Lucía R.", matchdayPoints: 74, totalPoints: 74, value: 88.6, position: 2, previousPosition: 1, form: [67, 59, 71, 69, 74], rosterOffset: 2 },
-  { id: "rival_violeta", initials: "UV", name: "Unión Violeta", manager: "Álex P.", matchdayPoints: 0, totalPoints: 0, value: 86.9, position: 4, previousPosition: 4, form: [44, 51, 68, 61, 0], rosterOffset: 4 },
-  { id: "rival_dorada", initials: "CD", name: "Costa Dorada", manager: "Sara M.", matchdayPoints: 0, totalPoints: 0, value: 89.3, position: 5, previousPosition: 6, form: [55, 64, 70, 58, 0], rosterOffset: 1 },
+  { id: "rival_cierzo", initials: "AC", name: "Atlético Cierzo", manager: "Marcos L.", matchdayPoints: 0, totalPoints: 0, value: 91.8, position: 1, previousPosition: 1, form: [], rosterOffset: 0 },
+  { id: "rival_blanco", initials: "RB", name: "Rayo Blanco", manager: "Lucía R.", matchdayPoints: 0, totalPoints: 0, value: 88.6, position: 2, previousPosition: 2, form: [], rosterOffset: 2 },
+  { id: "rival_violeta", initials: "UV", name: "Unión Violeta", manager: "Álex P.", matchdayPoints: 0, totalPoints: 0, value: 86.9, position: 4, previousPosition: 4, form: [], rosterOffset: 4 },
+  { id: "rival_dorada", initials: "CD", name: "Costa Dorada", manager: "Sara M.", matchdayPoints: 0, totalPoints: 0, value: 89.3, position: 5, previousPosition: 5, form: [], rosterOffset: 1 },
 ];
 
 function rivalRoster(competition: CompetitionName, offset: number) {
