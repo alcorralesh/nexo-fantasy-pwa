@@ -1813,11 +1813,11 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, participation
     setSaved(false);
   }, [squad?.players]);
 
-  if (!squad) return <section className="league-tab-view"><div className="league-section-heading"><div><p className="eyebrow">ALINEACIÓN DE LA LIGA</p><h2>Mi equipo</h2><p>Los cambios solo afectan a esta liga.</p></div></div><div className="empty-state league-empty"><strong>Plantilla pendiente de sincronización</strong><p>Se mostrará aquí cuando el backend confirme el reparto de esta liga.</p></div></section>;
-
-  if (league.mode !== "fantasy" && selectedTeamMatchday !== CURRENT_MATCHDAY) return <ScheduledTeamMatchdayView matchday={selectedTeamMatchday} onSelectMatchday={setSelectedTeamMatchday} />;
   if (league.mode === "fantasy" && fantasyEvent && !fantasyEvent.snapshot) return <FantasyBudgetPending event={fantasyEvent} />;
-  if (league.mode === "fantasy") return <>{fantasyEvent?.snapshot && <FantasySnapshotBanner event={fantasyEvent} />}<FantasyQuickTools options={fantasyOptions} onCommand={(type, respectBudget) => setFantasyCommand({ id: crypto.randomUUID(), type, respectBudget })} /><FantasyMatchdayBuilder competition={league.competition} players={marketPlayers} previousPlayerIds={squad.startingPlayerIds} matchdayBudget={fantasyMatchdayBudget} scoringRules={scoringRules} savedLineup={fantasyLineup} command={fantasyCommand} onSave={onSaveFantasyLineup} onSelectMatchday={setSelectedTeamMatchday} notify={notify} /></>;
+  if (league.mode === "fantasy") return <>{fantasyEvent?.snapshot && <FantasySnapshotBanner event={fantasyEvent} />}<FantasyQuickTools options={fantasyOptions} onCommand={(type, respectBudget) => setFantasyCommand({ id: crypto.randomUUID(), type, respectBudget })} /><FantasyMatchdayBuilder competition={league.competition} players={marketPlayers} previousPlayerIds={squad?.startingPlayerIds ?? []} matchdayBudget={fantasyMatchdayBudget} scoringRules={scoringRules} savedLineup={fantasyLineup} command={fantasyCommand} onSave={onSaveFantasyLineup} onSelectMatchday={setSelectedTeamMatchday} notify={notify} /></>;
+
+  if (!squad) return <section className="league-tab-view"><div className="league-section-heading"><div><p className="eyebrow">ALINEACIÓN DE LA LIGA</p><h2>Mi equipo</h2><p>Los cambios solo afectan a esta liga.</p></div></div><div className="empty-state league-empty"><strong>Plantilla pendiente de sincronización</strong><p>Se mostrará aquí cuando el backend confirme el reparto de esta liga.</p></div></section>;
+  if (selectedTeamMatchday !== CURRENT_MATCHDAY) return <ScheduledTeamMatchdayView matchday={selectedTeamMatchday} onSelectMatchday={setSelectedTeamMatchday} />;
 
   const currentStarters = squad.players.filter((player) => starterIds.includes(player.id));
   const currentBench = squad.players.filter((player) => !starterIds.includes(player.id));
