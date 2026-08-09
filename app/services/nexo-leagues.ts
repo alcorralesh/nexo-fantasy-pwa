@@ -36,6 +36,12 @@ type MembershipRow = {
   member_count: number;
 };
 
+type RosterRow = {
+  membership_id: string;
+  roster_id: string;
+  squad: InitialSquad;
+};
+
 const competitionUiIds: Record<string, string> = {
   primera: "comp_primera",
   segunda: "comp_segunda",
@@ -52,16 +58,20 @@ function uiCompetitionId(id: string) {
   return competitionUiIds[id] ?? id;
 }
 
-export async function loadNexoLeagueState(): Promise<{ publicLeagues: PublicLeagueSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; adminLeagueIds: string[] }> {
+export async function loadNexoLeagueState(): Promise<{ publicLeagues: PublicLeagueSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; adminLeagueIds: string[]; squads: Record<string, InitialSquad> }> {
   const client = requireClient();
-  const [{ data: directory, error: directoryError }, { data: memberships, error: membershipsError }] = await Promise.all([
+  const [{ data: directory, error: directoryError }, { data: memberships, error: membershipsError }, { data: rosters, error: rostersError }] = await Promise.all([
     client.rpc("league_directory"),
     client.rpc("my_league_memberships"),
+    client.rpc("my_market_rosters"),
   ]);
   if (directoryError) throw directoryError;
   if (membershipsError) throw membershipsError;
+  if (rostersError) throw rostersError;
   const rows = (directory ?? []) as DirectoryRow[];
   const mine = (memberships ?? []) as MembershipRow[];
+  const myRosters = (rosters ?? []) as RosterRow[];
+  const rosterByMembership = new Map(myRosters.map((row) => [row.membership_id, row]));
   return {
     publicLeagues: rows.filter((row) => row.visibility === "public").map((row) => ({
       id: row.id,
@@ -92,10 +102,11 @@ export async function loadNexoLeagueState(): Promise<{ publicLeagues: PublicLeag
       id: row.membership_id,
       leagueId: row.league_id,
       teamId: row.team_id,
-      rosterId: `roster_${row.membership_id}`,
+      rosterId: rosterByMembership.get(row.membership_id)?.roster_id ?? `roster_${row.membership_id}`,
       budget: Number(row.budget),
     })),
     adminLeagueIds: mine.filter((row) => row.role === "admin").map((row) => row.league_id),
+    squads: Object.fromEntries(myRosters.map((row) => [row.membership_id, row.squad])),
   };
 }
 

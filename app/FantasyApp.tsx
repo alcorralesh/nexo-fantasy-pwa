@@ -463,6 +463,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       setLeagues(state.leagues);
       setParticipations(state.participations);
       setPrivateLeagueAdminIds(state.adminLeagueIds);
+      setInitialSquads((current) => ({ ...current, ...state.squads }));
     } catch { /* La pantalla puede seguir usando los datos de demostración si la red falla. */ }
   }
 
