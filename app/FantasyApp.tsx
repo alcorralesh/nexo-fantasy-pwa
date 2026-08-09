@@ -10930,6 +10930,8 @@ const adminDemoActivity = [
 
 function FantasyEventsAdminPanel({ events, fixtures, onCreate, onSnapshot }: { events: FantasyEvent[]; fixtures: MatchFixture[]; onCreate: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshot: (eventId: string) => Promise<void> | void }) {
   const [creatorOpen, setCreatorOpen] = useState(false);
+  const [detailEventId, setDetailEventId] = useState<string | null>(null);
+  const detailEvent = events.find((event) => event.id === detailEventId);
   return (
     <section className="admin-panel fantasy-events-admin">
       <div className="section-title">
@@ -10959,7 +10961,10 @@ function FantasyEventsAdminPanel({ events, fixtures, onCreate, onSnapshot }: { e
               <strong>{event.snapshot ? `${event.snapshot.budget.toFixed(1).replace(".", ",")} M` : "Presupuesto pendiente"}</strong>
               <span>{event.snapshot ? `${Object.keys(event.snapshot.playerPrices).length} precios · P${event.snapshot.percentile}` : `${event.memberCount} inscritos`}</span>
             </div>
-            {!event.snapshot ? <b>◷ SE ACTIVA AL CERRAR J{event.previousMatchday}</b> : <b>✓ BLOQUEADO</b>}
+            <div className="fantasy-admin-actions">
+              {!event.snapshot ? <b>◷ SE ACTIVA AL CERRAR J{event.previousMatchday}</b> : <b>✓ BLOQUEADO</b>}
+              <button type="button" onClick={() => setDetailEventId(event.id)}>Ver detalles</button>
+            </div>
           </article>
         ))}
       </div>
@@ -10973,7 +10978,74 @@ function FantasyEventsAdminPanel({ events, fixtures, onCreate, onSnapshot }: { e
           }}
         />
       )}
+      {detailEvent && (
+        <FantasyEventAdminDetail
+          event={detailEvent}
+          onClose={() => setDetailEventId(null)}
+        />
+      )}
     </section>
+  );
+}
+
+function FantasyEventAdminDetail({ event, onClose }: { event: FantasyEvent; onClose: () => void }) {
+  const clubs = Array.from(new Set(event.fixtures.flatMap((fixture) => [fixture.home, fixture.away])));
+  const matchdays = Array.from(new Set(event.fixtures.map((fixture) => fixture.matchday))).sort((a, b) => a - b);
+  const formatLabel = event.format === "partidazo" ? "Un partido" : event.format === "matches" ? "Varios partidos" : "Varias jornadas";
+  return (
+    <div className="dialog-backdrop fantasy-event-detail-backdrop" role="presentation">
+      <section className="team-dialog fantasy-event-detail" role="dialog" aria-modal="true" aria-labelledby="fantasy-event-detail-title">
+        <div className="dialog-header">
+          <div>
+            <p className="eyebrow">ADMINISTRACIÓN · LIGA FANTÁSTICA</p>
+            <h2 id="fantasy-event-detail-title">{event.name}</h2>
+            <p>{event.description}</p>
+          </div>
+          <button className="dialog-close" onClick={onClose} aria-label="Cerrar">×</button>
+        </div>
+
+        <article className={`fantasy-detail-status ${event.snapshot ? "ready" : "pending"}`}>
+          <span>{event.snapshot ? "✓" : "◷"}</span>
+          <div>
+            <small>{event.snapshot ? "PRECIOS Y PRESUPUESTO CERRADOS" : "PUBLICADA · PRESUPUESTO PENDIENTE"}</small>
+            <strong>{event.snapshot ? `${event.snapshot.budget.toFixed(1).replace(".", ",")} M` : `Se activará al cerrar la Jornada ${event.previousMatchday}`}</strong>
+            <p>{event.snapshot ? `${Object.keys(event.snapshot.playerPrices).length} futbolistas con precio congelado para todos los participantes.` : "Los usuarios pueden consultar la liga, pero no montar el once hasta disponer de la instantánea."}</p>
+          </div>
+          <b>{event.featured ? "★ DESTACADA" : event.status.toUpperCase()}</b>
+        </article>
+
+        <div className="fantasy-detail-metrics">
+          <article><small>COMPETICIÓN</small><strong>{event.competition}</strong><span>{formatLabel}</span></article>
+          <article><small>PARTIDOS</small><strong>{event.fixtures.length}</strong><span>{matchdays.map((matchday) => `J${matchday}`).join(" · ")}</span></article>
+          <article><small>INSCRITOS</small><strong>{event.memberCount}/{event.capacity}</strong><span>{event.capacity - event.memberCount} plazas libres</span></article>
+          <article><small>MÁXIMO POR CLUB</small><strong>{event.maxPlayersPerClub}</strong><span>jugadores en el once</span></article>
+        </div>
+
+        <section className="fantasy-detail-section">
+          <header><div><p className="eyebrow">CALENDARIO INCLUIDO</p><h3>Partidos seleccionados</h3></div><strong>{clubs.length} clubes</strong></header>
+          <div className="fantasy-detail-fixtures">
+            {event.fixtures.map((fixture, index) => (
+              <article key={fixture.id}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <div><small>JORNADA {fixture.matchday} · {fixture.kickoffLabel}</small><strong>{fixture.home}<em>vs</em>{fixture.away}</strong></div>
+              </article>
+            ))}
+          </div>
+          <div className="fantasy-detail-clubs">{clubs.map((club) => <span key={club}>{club}</span>)}</div>
+        </section>
+
+        <section className="fantasy-detail-rules">
+          <div><small>ALINEACIÓN</small><strong>{event.lineupPolicy === "fixed" ? "Una para todo el evento" : "Nueva en cada jornada"}</strong></div>
+          <div><small>PERCENTIL</small><strong>P{event.budgetPercentile}</strong></div>
+          <div><small>CIERRE DE PRECIOS</small><strong>{event.previousMatchday === 0 ? "Instantánea inicial" : `Al cerrar J${event.previousMatchday}`}</strong></div>
+          <div><small>VERSIÓN</small><strong>{event.snapshot?.algorithmVersion ?? "Pendiente"}</strong></div>
+        </section>
+
+        <div className="dialog-actions">
+          <button type="button" className="primary-button" onClick={onClose}>Cerrar detalles</button>
+        </div>
+      </section>
+    </div>
   );
 }
 
