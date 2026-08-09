@@ -6,6 +6,18 @@ const competitionNames: Record<string, CompetitionName> = { primera: "Primera", 
 const catalogCacheKey = "nexo_player_catalog_2026_27_v1";
 const catalogCacheLifetime = 6 * 60 * 60 * 1000;
 
+export type CatalogSyncSummary = {
+  additions: number;
+  updates: number;
+  deactivations: number;
+  unchanged: number;
+  total: number;
+  competitions: Record<"primera" | "segunda" | "liga_f", number>;
+};
+
+export type CatalogSyncResult = { jobId: string; mode: "preview" | "apply"; catalogVersion: string; summary: CatalogSyncSummary };
+export type CatalogSyncJob = { id: string; mode: "preview" | "apply"; status: "running" | "succeeded" | "failed"; catalog_version: string | null; summary: Partial<CatalogSyncSummary>; error_message: string | null; started_at: string; finished_at: string | null };
+
 function requireClient() {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase todavía no está configurado.");
@@ -56,4 +68,20 @@ export async function updateNexoPlayer(player: CompetitionPlayer, active = true)
   });
   if (error) throw new Error(error.message);
   if (typeof window !== "undefined") window.localStorage.removeItem(catalogCacheKey);
+}
+
+export async function runNexoPlayerCatalogSync(mode: "preview" | "apply"): Promise<CatalogSyncResult> {
+  const client = requireClient();
+  const { data, error } = await client.functions.invoke("sync-player-catalog", { body: { mode } });
+  if (error) throw new Error((data as { error?: string } | null)?.error ?? error.message);
+  if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
+  if (mode === "apply" && typeof window !== "undefined") window.localStorage.removeItem(catalogCacheKey);
+  return data as CatalogSyncResult;
+}
+
+export async function loadNexoPlayerCatalogSyncHistory(): Promise<CatalogSyncJob[]> {
+  const client = requireClient();
+  const { data, error } = await client.from("player_catalog_sync_jobs").select("id,mode,status,catalog_version,summary,error_message,started_at,finished_at").order("started_at", { ascending: false }).limit(8);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as CatalogSyncJob[];
 }

@@ -585,6 +585,10 @@ export const helpRules: HelpRule[] = [
     rules: [
       "Un futbolista solo puede utilizarse en la competición en la que figure inscrito para esa temporada.",
       "Los cambios de club o competición se aplicarán mediante sincronizaciones administrativas y nunca alterando identificadores históricos.",
+      "Administración puede comprobar primero altas, cambios y bajas y confirmar después la actualización desde las fuentes públicas de LALIGA y Liga F.",
+      "Una sincronización desactiva a quien ya no aparece en la plantilla oficial, pero no elimina sus jornadas, operaciones ni puntuaciones históricas.",
+      "La sincronización actualiza identidad, club, posición y fotografía; los valores de mercado modificados por el administrador se conservan.",
+      "Solo puede ejecutarse una sincronización a la vez y cada intento registra administrador, fecha, versión, resultado y error si lo hubiera.",
       "Las plantillas de Primera y Segunda se consideran provisionales hasta el cierre del mercado de verano.",
       "Las puntuaciones conservarán la competición y el club que correspondían al jugador cuando se disputó cada partido.",
     ],
