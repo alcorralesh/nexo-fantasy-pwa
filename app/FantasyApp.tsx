@@ -1997,7 +1997,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       memberCount: 0,
       status: "announced",
     };
-    setFantasyEvents((current) => (event.featured ? [...current.map((item) => ({ ...item, featured: false })), next] : [...current, next]));
+    setFantasyEvents((current) => (event.featured ? [...current.map((item) => (item.competition === event.competition ? { ...item, featured: false } : item)), next] : [...current, next]));
     notify(`${event.format === "partidazo" ? "El Partidazo" : "Evento fantástico"} publicado · presupuesto pendiente`);
   }
 
@@ -2970,7 +2970,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
         </header>
 
         <main className="content">
-          {active === "inicio" && <Dashboard userName={displayUser.displayName} competition={competition} setCompetition={setCompetition} teamId={teamId} team={team} participations={participations} clubMotto={clubIdentityMeta[teamId]?.motto} leagues={leagues} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} onOpenLeague={openLeague} featuredFantasyEvent={fantasyEvents.find((event) => event.featured && event.status !== "finished")} onJoinFantasy={openFantasyJoin} navigate={navigate} />}
+          {active === "inicio" && <Dashboard userName={displayUser.displayName} competition={competition} setCompetition={setCompetition} teamId={teamId} team={team} participations={participations} clubMotto={clubIdentityMeta[teamId]?.motto} leagues={leagues} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} onOpenLeague={openLeague} featuredFantasyEvent={fantasyEvents.find((event) => event.featured && event.competition === competition && event.status !== "finished")} onJoinFantasy={openFantasyJoin} navigate={navigate} />}
           {active === "equipo" && <TeamView teamId={teamId} setTeamId={setTeamId} teams={teams} leagues={leagues} participations={participations} fantasyEvents={fantasyEvents} clubRules={clubRules} clubIdentityMeta={clubIdentityMeta} onUpdateClub={updateClubIdentity} competition={competition} setCompetition={setCompetition} freeLimit={initialData.rules.freeTeamsPerCompetition} onCreateTeam={() => setTeamCreatorOpen(true)} onOpenLeague={openLeague} onBrowseLeagues={() => navigate("ligas")} />}
           {active === "tendencias" && <TrendsView competition={competition} setCompetition={setCompetition} query={query} setQuery={setQuery} position={position} setPosition={setPosition} />}
           {active === "ligas" && <LeaguesView leagues={leagues} participations={participations} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} fantasyEvents={fantasyEvents.filter((event) => event.status !== "draft" && event.status !== "finished")} onOpenLeague={openLeague} onJoinPublic={() => setPublicJoinOpen(true)} onJoinFantasy={openFantasyJoin} onCreatePrivate={() => setPrivateLeagueCreatorOpen(true)} onJoinCode={findPrivateLeagueByCode} joinCode={joinCode} setJoinCode={setJoinCode} notify={notify} />}

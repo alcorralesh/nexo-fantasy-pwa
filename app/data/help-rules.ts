@@ -186,6 +186,8 @@ export const helpRules: HelpRule[] = [
       "Si todos los partidos pertenecen a la misma jornada se utiliza una única alineación; si abarcan varias, Administración decide entre una alineación fija o una nueva por jornada.",
       "Al crear el evento se validan el mínimo de partidos, la capacidad, el máximo por club y el percentil usado para calcular el presupuesto.",
       "El Partidazo es una edición fantástica de un solo encuentro y puede aparecer destacada en Inicio y Ligas mientras admita inscripciones.",
+      "Puede existir un reto destacado distinto por competición; Inicio muestra únicamente el de Primera, Segunda o Liga F que corresponda al selector activo.",
+      "Publicar un nuevo destacado sustituye solo al destacado anterior de esa misma competición y no afecta a los de las otras divisiones.",
       "El Partidazo utiliza siempre una única alineación para su único encuentro; Administración no muestra ninguna opción para renovarla por jornadas.",
       "Al acceder directamente desde la tarjeta de El Partidazo no se elige competición ni otro evento: ambos quedan determinados por los equipos del encuentro.",
       "En ese acceso directo el usuario solo selecciona uno de sus clubes compatibles y confirma la inscripción; si no dispone de ninguno, puede crearlo y regresar al flujo.",
