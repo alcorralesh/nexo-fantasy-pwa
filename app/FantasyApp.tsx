@@ -10,7 +10,8 @@ import { defaultMarketValueConfig, type MarketValueConfig } from "./domain/marke
 import { calculatePlayerPoints, defaultScoringRules, demoPlayerMatchStats, type ScoringRule } from "./domain/scoring";
 import { createDemoAllocationGateway } from "./services/initial-squad-allocation";
 import { acceptNexoLegalDocuments, completeNexoOnboarding, createNexoTeam, loadNexoIdentity, registerInNexo, sendNexoPasswordReset, signInToNexo, signOutFromNexo, type NexoIdentity, type NexoRegistration } from "./services/nexo-auth";
-import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, reserveNexoLeaguePlace } from "./services/nexo-leagues";
+import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, reserveNexoLeaguePlace, updateNexoPrivateLeague } from "./services/nexo-leagues";
+import { cancelNexoMarketBid, forceNexoMarketRenewal, loadNexoLeagueMarket, placeNexoMarketBid, type NexoLeagueMarket } from "./services/nexo-market";
 import { loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, runNexoPlayerCatalogSync, updateNexoPlayer, type CatalogSyncJob, type CatalogSyncResult } from "./services/nexo-players";
 import { loadNexoCalendarSyncHistory, loadNexoMatchCalendar, runNexoCalendarSync, type CalendarSyncJob, type CalendarSyncResult, type MatchFixture } from "./services/nexo-calendar";
 import { deleteNexoMatchdaySimulation, loadNexoMatchdayLineups, loadNexoMatchdayStates, saveNexoMatchdayLineup, simulateNexoMatchdayClose, type NexoMatchdaySimulation, type NexoMatchdayState, type NexoSimulationScenario } from "./services/nexo-matchdays";
@@ -2245,7 +2246,17 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     } else notify("Oferta rechazada");
   }
 
-  function renewLeagueMarketAsAdmin(leagueId: string) {
+  async function renewLeagueMarketAsAdmin(leagueId: string) {
+    if (sessionUser?.id !== "demo_user") {
+      try {
+        const result = await forceNexoMarketRenewal(leagueId);
+        await refreshBackendLeagues();
+        notify(`Mercado renovado · ciclo ${result.cycleNumber} · ${result.transfers} fichajes · ${result.listings} jugadores nuevos`);
+      } catch (failure) {
+        notify(failure instanceof Error ? failure.message : "No se ha podido renovar el mercado");
+      }
+      return;
+    }
     const leagueParticipationIds = participations.filter((item) => item.leagueId === leagueId).map((item) => item.id);
     const listedPlayers = leagueParticipationIds.flatMap((participationId) => {
       const squad = initialSquads[participationId];
@@ -2408,12 +2419,26 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     return { leagueId, accessCode };
   }
 
-  function updatePrivateLeague(leagueId: string, name: string, rules: PrivateLeagueRules) {
+  async function updatePrivateLeague(leagueId: string, name: string, rules: PrivateLeagueRules): Promise<boolean> {
     const nextRules = {
       ...rules,
       version: rules.version + 1,
       updatedAt: Date.now(),
     };
+    if (sessionUser?.id !== "demo_user") {
+      try {
+        await updateNexoPrivateLeague({
+          leagueId,
+          name: name.trim(),
+          capacity: rules.capacity,
+          joinLocked: rules.joinLocked,
+          rules: nextRules,
+        });
+      } catch (failure) {
+        notify(failure instanceof Error ? failure.message : "No se han podido guardar las reglas");
+        return false;
+      }
+    }
     setPrivateLeagueRules((current) => ({ ...current, [leagueId]: nextRules }));
     setLeagues((current) =>
       current.map((league) =>
@@ -2441,7 +2466,8 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
           : invite,
       ),
     );
-    notify("Reglas actualizadas · se aplicarán a las próximas operaciones");
+    notify("Reglas actualizadas · el nuevo intervalo se aplicará después de la renovación ya programada");
+    return true;
   }
 
   function regeneratePrivateLeagueCode(leagueId: string): string {
@@ -2958,6 +2984,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
                 photoUrl: player.photoUrl,
               }))}
               marketRules={{ ...effectiveMarketRules, activeMatchday: selectedEditableMatchday }}
+              backendMarketEnabled={sessionUser.id !== "demo_user"}
               privateRules={selectedPrivateRules}
               canManagePrivateLeague={privateLeagueAdminIds.includes(selectedLeagueId)}
               privateAdmin={privateLeagueInvites.find((invite) => invite.league.id === selectedLeagueId)?.participants.find((participant) => participant.role === "admin")}
@@ -3193,9 +3220,9 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
           league={leagues.find((league) => league.id === managedPrivateLeagueId)!}
           rules={privateLeagueRules[managedPrivateLeagueId]}
           onClose={() => setManagedPrivateLeagueId(null)}
-          onSave={(name, rules) => {
-            updatePrivateLeague(managedPrivateLeagueId, name, rules);
-            setManagedPrivateLeagueId(null);
+          onSave={async (name, rules) => {
+            const saved = await updatePrivateLeague(managedPrivateLeagueId, name, rules);
+            if (saved) setManagedPrivateLeagueId(null);
           }}
           onRegenerateCode={() => regeneratePrivateLeagueCode(managedPrivateLeagueId)}
         />
@@ -3951,10 +3978,11 @@ function PrivateOperationRules({ rules, onChange }: { rules: Omit<PrivateLeagueR
   );
 }
 
-function ManagePrivateLeagueDialog({ league, rules, onClose, onSave, onRegenerateCode }: { league: LeagueSummary; rules: PrivateLeagueRules; onClose: () => void; onSave: (name: string, rules: PrivateLeagueRules) => void; onRegenerateCode: () => string }) {
+function ManagePrivateLeagueDialog({ league, rules, onClose, onSave, onRegenerateCode }: { league: LeagueSummary; rules: PrivateLeagueRules; onClose: () => void; onSave: (name: string, rules: PrivateLeagueRules) => Promise<void> | void; onRegenerateCode: () => string }) {
   const [name, setName] = useState(league.name);
   const [draft, setDraft] = useState({ ...rules });
   const [tab, setTab] = useState<"access" | "market" | "operations">("access");
+  const [saving, setSaving] = useState(false);
   return (
     <div className="dialog-backdrop">
       <section className="team-dialog private-league-dialog manage-private-dialog" role="dialog" aria-modal="true" aria-labelledby="manage-private-title">
@@ -4023,8 +4051,15 @@ function ManagePrivateLeagueDialog({ league, rules, onClose, onSave, onRegenerat
           <button className="secondary-button" onClick={onClose}>
             Cancelar
           </button>
-          <button className="primary-button" onClick={() => onSave(name, draft)}>
-            Guardar nueva versión
+          <button className="primary-button" disabled={saving} onClick={async () => {
+            setSaving(true);
+            try {
+              await onSave(name, draft);
+            } finally {
+              setSaving(false);
+            }
+          }}>
+            {saving ? "Guardando…" : "Guardar nueva versión"}
           </button>
         </div>
       </section>
@@ -5482,7 +5517,7 @@ function LeagueAreaNav({ section, onChange, mobile = false }: { section: LeagueA
   );
 }
 
-function LeagueDetailView({ league, team, participation, squad, section, onSectionChange, onBack, marketPlayers, marketRules, privateRules, canManagePrivateLeague, privateAdmin, privateParticipants, onManagePrivateLeague, reports, onReport, onResolveReport, onLeaveLeague, bids, onChangeBids, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, scoringRules, settlementRules, fixtures, fantasyLineup, previousFantasyLineup, fantasyEvent, onSaveFantasyLineup, onAdjustBudget, onImmediateSale, notify }: { league: LeagueSummary; team: FantasyTeamSummary; participation?: LeagueParticipation; squad?: InitialSquad; section: LeagueAreaSection; onSectionChange: (section: LeagueAreaSection) => void; onBack: () => void; marketPlayers: MarketPlayer[]; marketRules: MarketRules; privateRules?: PrivateLeagueRules; canManagePrivateLeague: boolean; privateAdmin?: PrivateLeagueParticipant; privateParticipants: PrivateLeagueParticipant[]; onManagePrivateLeague: () => void; reports: LeagueReport[]; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeaveLeague: (successorId?: string) => Promise<string | null>; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; fixtures: MatchFixture[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; fantasyEvent?: FantasyEvent; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => Promise<void> | void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; notify: (message: string) => void }) {
+function LeagueDetailView({ league, team, participation, squad, section, onSectionChange, onBack, marketPlayers, marketRules, backendMarketEnabled, privateRules, canManagePrivateLeague, privateAdmin, privateParticipants, onManagePrivateLeague, reports, onReport, onResolveReport, onLeaveLeague, bids, onChangeBids, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, scoringRules, settlementRules, fixtures, fantasyLineup, previousFantasyLineup, fantasyEvent, onSaveFantasyLineup, onAdjustBudget, onImmediateSale, notify }: { league: LeagueSummary; team: FantasyTeamSummary; participation?: LeagueParticipation; squad?: InitialSquad; section: LeagueAreaSection; onSectionChange: (section: LeagueAreaSection) => void; onBack: () => void; marketPlayers: MarketPlayer[]; marketRules: MarketRules; backendMarketEnabled: boolean; privateRules?: PrivateLeagueRules; canManagePrivateLeague: boolean; privateAdmin?: PrivateLeagueParticipant; privateParticipants: PrivateLeagueParticipant[]; onManagePrivateLeague: () => void; reports: LeagueReport[]; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeaveLeague: (successorId?: string) => Promise<string | null>; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; fixtures: MatchFixture[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; fantasyEvent?: FantasyEvent; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => Promise<void> | void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; notify: (message: string) => void }) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const starters = squad?.players.filter((player) => squad.startingPlayerIds.includes(player.id)) ?? [];
   const ownedMarketListings = (squad?.players ?? []).flatMap((player) => {
@@ -5534,7 +5569,7 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
         </article>
       )}
       {section === "equipo" && (!fantasyEvent || fantasyEvent.snapshot) && <LeagueSquadView squad={squad} starters={starters} league={league} marketPlayers={fantasyScopedPlayers} fixtures={fixtures} participationId={participation?.id ?? ""} budget={participation?.budget ?? 0} fantasyMatchdayBudget={fantasyEvent?.snapshot?.budget ?? marketRules.fantasyMatchdayBudget} fantasyOptions={marketRules} fantasyEvent={fantasyEvent} scoringRules={scoringRules} fantasyLineup={fantasyLineup} previousFantasyLineup={previousFantasyLineup} onSaveFantasyLineup={onSaveFantasyLineup} playerContracts={playerContracts} playerOffers={playerOffers} onChangePlayerContract={onChangePlayerContract} onCreatePlayerOffer={onCreatePlayerOffer} onRespondPlayerOffer={onRespondPlayerOffer} onAdjustBudget={onAdjustBudget} onImmediateSale={onImmediateSale} notify={notify} />}
-      {section === "mercado" && <LeagueMarketView league={league} players={fantasyScopedPlayers} squad={squad} budget={participation?.budget ?? 100} rules={marketRules} bids={bids} onChangeBids={onChangeBids} ownedListings={ownedMarketListings} receivedOffers={receivedMarketOffers} onRespondOffer={onRespondPlayerOffer} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} onGenerateSystemOffers={() => ownedMarketListings.forEach(({ player }) => onCreatePlayerOffer(player, "game"))} notify={notify} />}
+      {section === "mercado" && <LeagueMarketView league={league} players={fantasyScopedPlayers} squad={squad} budget={participation?.budget ?? 100} rules={marketRules} backendEnabled={backendMarketEnabled} bids={bids} onChangeBids={onChangeBids} ownedListings={ownedMarketListings} receivedOffers={receivedMarketOffers} onRespondOffer={onRespondPlayerOffer} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} onGenerateSystemOffers={() => ownedMarketListings.forEach(({ player }) => onCreatePlayerOffer(player, "game"))} notify={notify} />}
       {section === "jornada" && <LeagueMatchdayView squad={squad} competition={league.competition} fixtures={fixtures} scoringRules={scoringRules} settlementRules={settlementRules} onPrepareTeam={() => onSectionChange("equipo")} notify={notify} />}
       {section === "clasificacion" && <LeagueRankingView team={team} competition={league.competition} budget={participation?.budget ?? 0} rules={marketRules} bidCommitment={bids.reduce((total, bid) => total + bid.amount, 0)} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={onClausePurchase} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} currentUserIsAdmin={canManagePrivateLeague} privateAdmin={privateAdmin} onReport={onReport} />}
       {optionsOpen && <LeagueOptionsDialog league={league} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} isAdmin={canManagePrivateLeague} participants={privateParticipants} reports={reports} onResolveReport={onResolveReport} onLeave={onLeaveLeague} onClose={() => setOptionsOpen(false)} />}
@@ -7833,7 +7868,7 @@ function FormationChangeDialog({ currentFormation, targetFormation, targetQuotas
 
 function nextMarketRenewal(hours: number) {
   const period = Math.max(1, hours) * 60 * 60 * 1000;
-  return (Math.floor(Date.now() / period) + 1) * period;
+  return Date.now() + period;
 }
 
 function countdownLabel(milliseconds: number) {
@@ -7844,29 +7879,63 @@ function countdownLabel(milliseconds: number) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
-function LeagueMarketView({ league, players, squad, budget, rules, bids, onChangeBids, ownedListings, receivedOffers, onRespondOffer, sentOffers, onChangeSentOffers, onGenerateSystemOffers, notify }: { league: LeagueSummary; players: MarketPlayer[]; squad?: InitialSquad; budget: number; rules: MarketRules; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; ownedListings: { player: InitialSquadPlayer; contract: PlayerContract }[]; receivedOffers: { player: InitialSquadPlayer; offer: PlayerOffer }[]; onRespondOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; onGenerateSystemOffers: () => void; notify: (message: string) => void }) {
+function LeagueMarketView({ league, players, squad, budget, rules, backendEnabled, bids, onChangeBids, ownedListings, receivedOffers, onRespondOffer, sentOffers, onChangeSentOffers, onGenerateSystemOffers, notify }: { league: LeagueSummary; players: MarketPlayer[]; squad?: InitialSquad; budget: number; rules: MarketRules; backendEnabled: boolean; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; ownedListings: { player: InitialSquadPlayer; contract: PlayerContract }[]; receivedOffers: { player: InitialSquadPlayer; offer: PlayerOffer }[]; onRespondOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; onGenerateSystemOffers: () => void; notify: (message: string) => void }) {
   const isFantasy = league.mode === "fantasy";
-  const visiblePlayers = isFantasy ? players : players.slice(0, 5);
+  const [backendMarket, setBackendMarket] = useState<NexoLeagueMarket | null>(null);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const backendPlayers: MarketPlayer[] = (backendMarket?.listings ?? []).map((listing) => ({
+    id: listing.playerId,
+    initials: listing.initials,
+    name: listing.name,
+    clubId: listing.club.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+    club: listing.club,
+    position: listing.position,
+    points: 0,
+    price: listing.price,
+    trend: "En mercado",
+    photoUrl: listing.photoUrl,
+  }));
+  const visiblePlayers = isFantasy ? players : backendMarket ? backendPlayers : players.slice(0, 5);
   const [area, setArea] = useState<"market" | "bids" | "offers" | "history">("market");
   const [selectedPlayer, setSelectedPlayer] = useState<MarketPlayer | null>(null);
   const [renewalAt, setRenewalAt] = useState(() => nextMarketRenewal(rules.renewalHours));
   const [remaining, setRemaining] = useState(() => renewalAt - Date.now());
+  async function refreshMarket() {
+    if (!backendEnabled || isFantasy) return;
+    setMarketLoading(true);
+    try {
+      const market = await loadNexoLeagueMarket(league.id);
+      setBackendMarket(market);
+      setRenewalAt(Date.parse(market.nextRenewalAt));
+      onChangeBids(market.myBids.map((bid) => ({ playerId: bid.playerId, amount: bid.amount, placedAt: Date.parse(bid.placedAt) })));
+    } catch (failure) {
+      notify(failure instanceof Error ? failure.message : "No se ha podido sincronizar el mercado");
+    } finally {
+      setMarketLoading(false);
+    }
+  }
   useEffect(() => {
-    setRenewalAt(nextMarketRenewal(rules.renewalHours));
-  }, [rules.renewalHours]);
+    void refreshMarket();
+  }, [league.id, backendEnabled, isFantasy]);
+  useEffect(() => {
+    if (!backendMarket) setRenewalAt(nextMarketRenewal(rules.renewalHours));
+  }, [rules.renewalHours, backendMarket]);
   useEffect(() => {
     const updateCountdown = () => {
       const difference = renewalAt - Date.now();
       if (difference <= 0) {
         setRemaining(0);
-        onGenerateSystemOffers();
-        setRenewalAt(nextMarketRenewal(rules.renewalHours));
+        if (backendEnabled) void refreshMarket();
+        else {
+          onGenerateSystemOffers();
+          setRenewalAt(nextMarketRenewal(rules.renewalHours));
+        }
       } else setRemaining(difference);
     };
     updateCountdown();
     const timer = window.setInterval(updateCountdown, 1000);
     return () => window.clearInterval(timer);
-  }, [renewalAt, rules.renewalHours, onGenerateSystemOffers]);
+  }, [renewalAt, rules.renewalHours, backendEnabled]);
   const bidCommitment = bids.reduce((total, bid) => total + bid.amount, 0);
   const sentOfferCommitment = sentOffers.filter((offer) => offer.status === "active" && offer.expiresAt > Date.now()).reduce((total, offer) => total + offer.amount, 0);
   const committed = bidCommitment + sentOfferCommitment;
@@ -7963,12 +8032,25 @@ function LeagueMarketView({ league, players, squad, budget, rules, bids, onChang
     },
   ].sort((a, b) => b.createdAt - a.createdAt);
 
-  function saveBid(player: MarketPlayer, amount: number): string | null {
+  async function saveBid(player: MarketPlayer, amount: number): Promise<string | null> {
     const existing = bids.find((bid) => bid.playerId === player.id);
     const otherCommitted = committed - (existing?.amount ?? 0);
     if (amount < player.price) return `La puja mínima es ${player.price.toFixed(1).replace(".", ",")} M`;
     if (otherCommitted + amount > spendingLimit) return `Supera tu límite total de ${spendingLimit.toFixed(1).replace(".", ",")} M`;
     if (!existing && bids.length >= availableBenchSlots) return `No puedes superar las ${rules.maxBenchPlayers} plazas de banquillo`;
+    if (backendEnabled && backendMarket) {
+      const listing = backendMarket.listings.find((item) => item.playerId === player.id);
+      if (!listing) return "Este jugador ya no está disponible en el mercado";
+      try {
+        await placeNexoMarketBid(listing.listingId, Number(amount.toFixed(1)));
+        await refreshMarket();
+        setSelectedPlayer(null);
+        notify(existing ? `Puja por ${player.name} actualizada` : `Puja por ${player.name} registrada`);
+        return null;
+      } catch (failure) {
+        return failure instanceof Error ? failure.message : "No se ha podido guardar la puja";
+      }
+    }
     const nextBid = {
       playerId: player.id,
       amount: Number(amount.toFixed(1)),
@@ -7980,8 +8062,20 @@ function LeagueMarketView({ league, players, squad, budget, rules, bids, onChang
     return null;
   }
 
-  function cancelBid(playerId: string) {
+  async function cancelBid(playerId: string) {
     const player = players.find((item) => item.id === playerId);
+    if (backendEnabled && backendMarket) {
+      const listing = backendMarket.listings.find((item) => item.playerId === playerId);
+      if (!listing) return;
+      try {
+        await cancelNexoMarketBid(listing.listingId);
+        await refreshMarket();
+        notify(`Puja por ${player?.name ?? "el jugador"} cancelada`);
+      } catch (failure) {
+        notify(failure instanceof Error ? failure.message : "No se ha podido cancelar la puja");
+      }
+      return;
+    }
     onChangeBids(bids.filter((bid) => bid.playerId !== playerId));
     notify(`Puja por ${player?.name ?? "el jugador"} cancelada`);
   }
@@ -8064,10 +8158,13 @@ function LeagueMarketView({ league, players, squad, budget, rules, bids, onChang
                   hour: "2-digit",
                   minute: "2-digit",
                 })}{" "}
-                · cada {rules.renewalHours} h
+                · cada {backendMarket?.intervalHours ?? rules.renewalHours} h
               </small>
+              {backendMarket && backendMarket.nextIntervalHours !== backendMarket.intervalHours && (
+                <small>Después de esta renovación: cada {backendMarket.nextIntervalHours} h</small>
+              )}
             </div>
-            <span>La puja más alta gana</span>
+            <span>{marketLoading ? "Sincronizando…" : backendMarket ? `Ciclo ${backendMarket.cycleNumber} · la puja más alta gana` : "La puja más alta gana"}</span>
           </article>
           <div className="market-shortcuts">
             <button className={area === "bids" ? "active" : ""} onClick={() => setArea(area === "bids" ? "market" : "bids")}>
@@ -8616,20 +8713,26 @@ function SentOfferEditDialog({ offer, onClose, onSave }: { offer: SentOffer; onC
     </div>
   );
 }
-function BidDialog({ player, existingBid, committed, budget, spendingLimit, debtPercent, onClose, onSave }: { player: MarketPlayer; existingBid?: MarketBid; committed: number; budget: number; spendingLimit: number; debtPercent: number; onClose: () => void; onSave: (amount: number) => string | null }) {
+function BidDialog({ player, existingBid, committed, budget, spendingLimit, debtPercent, onClose, onSave }: { player: MarketPlayer; existingBid?: MarketBid; committed: number; budget: number; spendingLimit: number; debtPercent: number; onClose: () => void; onSave: (amount: number) => Promise<string | null> | string | null }) {
   const [amount, setAmount] = useState((existingBid?.amount ?? player.price).toFixed(1));
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
   const otherCommitted = committed - (existingBid?.amount ?? 0);
   const maximum = Math.max(0, spendingLimit - otherCommitted);
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
     const parsed = Number(amount.replace(",", "."));
     if (!Number.isFinite(parsed)) {
       setError("Introduce una cantidad válida");
       return;
     }
-    const result = onSave(parsed);
-    if (result) setError(result);
+    setSaving(true);
+    try {
+      const result = await onSave(parsed);
+      if (result) setError(result);
+    } finally {
+      setSaving(false);
+    }
   }
   return (
     <div className="dialog-backdrop bid-dialog-backdrop" role="presentation">
@@ -8699,8 +8802,8 @@ function BidDialog({ player, existingBid, committed, budget, spendingLimit, debt
             <button type="button" className="secondary-button" onClick={onClose}>
               Cancelar
             </button>
-            <button type="submit" className="primary-button">
-              {existingBid ? "Guardar cambio" : "Confirmar puja"}
+            <button type="submit" className="primary-button" disabled={saving}>
+              {saving ? "Guardando…" : existingBid ? "Guardar cambio" : "Confirmar puja"}
             </button>
           </div>
         </form>
@@ -11326,7 +11429,7 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
   );
 }
 
-function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, economyRules, setEconomyRules, settlementRules, setSettlementRules, onboardingConfig, onForceOnboarding, legalConfig, onPublishLegalVersion, scoringRules, onChangeScoringRules, teams, leagues, participations, squads, bids, playerContracts, playerOffers, sentOffers, playerCatalog, matchFixtures, matchdays, simulationEnabled, catalogSyncEnabled, onCatalogSyncApplied, onSavePlayer, fantasyEvents, onCreateFantasyEvent, onSnapshotFantasyEvent, onOpenLeague, onRenewMarket, notify }: { marketRules: MarketRules; setMarketRules: (rules: MarketRules) => void; clubRules: ClubRules; setClubRules: (rules: ClubRules) => void; economyRules: EconomyRules; setEconomyRules: (rules: EconomyRules) => void; settlementRules: MatchdaySettlementRules; setSettlementRules: (rules: MatchdaySettlementRules) => void; onboardingConfig: OnboardingConfig; onForceOnboarding: (reason: string) => void; legalConfig: LegalConfig; onPublishLegalVersion: (kind: "privacy" | "terms", changeSummary: string) => void; scoringRules: ScoringRule[]; onChangeScoringRules: (rules: ScoringRule[]) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; squads: Record<string, InitialSquad>; bids: Record<string, MarketBid[]>; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; sentOffers: Record<string, SentOffer[]>; playerCatalog: Record<CompetitionName, CompetitionPlayer[]>; matchFixtures: MatchFixture[]; matchdays: NexoMatchdayState[]; simulationEnabled: boolean; catalogSyncEnabled: boolean; onCatalogSyncApplied: () => Promise<void>; onSavePlayer: (player: CompetitionPlayer) => Promise<void>; fantasyEvents: FantasyEvent[]; onCreateFantasyEvent: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshotFantasyEvent: (eventId: string) => Promise<void> | void; onOpenLeague: (leagueId: string) => void; onRenewMarket: (leagueId: string) => void; notify: (v: string) => void }) {
+function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, economyRules, setEconomyRules, settlementRules, setSettlementRules, onboardingConfig, onForceOnboarding, legalConfig, onPublishLegalVersion, scoringRules, onChangeScoringRules, teams, leagues, participations, squads, bids, playerContracts, playerOffers, sentOffers, playerCatalog, matchFixtures, matchdays, simulationEnabled, catalogSyncEnabled, onCatalogSyncApplied, onSavePlayer, fantasyEvents, onCreateFantasyEvent, onSnapshotFantasyEvent, onOpenLeague, onRenewMarket, notify }: { marketRules: MarketRules; setMarketRules: (rules: MarketRules) => void; clubRules: ClubRules; setClubRules: (rules: ClubRules) => void; economyRules: EconomyRules; setEconomyRules: (rules: EconomyRules) => void; settlementRules: MatchdaySettlementRules; setSettlementRules: (rules: MatchdaySettlementRules) => void; onboardingConfig: OnboardingConfig; onForceOnboarding: (reason: string) => void; legalConfig: LegalConfig; onPublishLegalVersion: (kind: "privacy" | "terms", changeSummary: string) => void; scoringRules: ScoringRule[]; onChangeScoringRules: (rules: ScoringRule[]) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; squads: Record<string, InitialSquad>; bids: Record<string, MarketBid[]>; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; sentOffers: Record<string, SentOffer[]>; playerCatalog: Record<CompetitionName, CompetitionPlayer[]>; matchFixtures: MatchFixture[]; matchdays: NexoMatchdayState[]; simulationEnabled: boolean; catalogSyncEnabled: boolean; onCatalogSyncApplied: () => Promise<void>; onSavePlayer: (player: CompetitionPlayer) => Promise<void>; fantasyEvents: FantasyEvent[]; onCreateFantasyEvent: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshotFantasyEvent: (eventId: string) => Promise<void> | void; onOpenLeague: (leagueId: string) => void; onRenewMarket: (leagueId: string) => Promise<void> | void; notify: (v: string) => void }) {
   const [section, setSection] = useState<AdminSection>("overview");
   const [selectedUserId, setSelectedUserId] = useState(adminDemoUsers[0].id);
   const [selectedLeagueId, setSelectedLeagueId] = useState(leagues[0]?.id ?? "");
@@ -11334,6 +11437,8 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, econo
   const [playerQuery, setPlayerQuery] = useState("");
   const [adminMatchday, setAdminMatchday] = useState(1);
   const [editingPlayer, setEditingPlayer] = useState<CompetitionPlayer | null>(null);
+  const [renewConfirmLeagueId, setRenewConfirmLeagueId] = useState<string | null>(null);
+  const [renewingLeagueId, setRenewingLeagueId] = useState<string | null>(null);
   const allReceivedOffers = Object.values(playerOffers).flat();
   const allSentOffers = Object.values(sentOffers).flat();
   const allBids = Object.values(bids).flat();
@@ -11619,9 +11724,23 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, econo
                   <button className="secondary-button" onClick={() => onOpenLeague(selectedLeague.id)}>
                     Entrar en la liga
                   </button>
-                  <button className="primary-button" onClick={() => onRenewMarket(selectedLeague.id)}>
-                    Renovar mercado ahora
-                  </button>
+                  {renewConfirmLeagueId === selectedLeague.id ? (
+                    <button className="primary-button" disabled={renewingLeagueId === selectedLeague.id} onClick={async () => {
+                      setRenewingLeagueId(selectedLeague.id);
+                      try {
+                        await onRenewMarket(selectedLeague.id);
+                        setRenewConfirmLeagueId(null);
+                      } finally {
+                        setRenewingLeagueId(null);
+                      }
+                    }}>
+                      {renewingLeagueId === selectedLeague.id ? "Renovando…" : "Confirmar renovación"}
+                    </button>
+                  ) : (
+                    <button className="primary-button" disabled={selectedLeague.mode !== "market"} onClick={() => setRenewConfirmLeagueId(selectedLeague.id)}>
+                      Forzar renovación
+                    </button>
+                  )}
                 </div>
               </header>
               <div className="admin-market-kpis">

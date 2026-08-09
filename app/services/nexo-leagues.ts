@@ -172,6 +172,17 @@ export async function createNexoPrivateLeague(input: { name: string; teamId: str
   return { leagueId: data.leagueId, membershipId: data.membershipId, accessCode: data.accessCode, squad: data.squad as InitialSquad };
 }
 
+export async function updateNexoPrivateLeague(input: { leagueId: string; name: string; capacity: number; joinLocked: boolean; rules: Record<string, unknown> }): Promise<void> {
+  const { error } = await requireClient().rpc("update_my_private_league", {
+    target_league_id: input.leagueId,
+    new_name: input.name,
+    new_capacity: input.capacity,
+    new_join_locked: input.joinLocked,
+    new_rules: input.rules,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function leaveNexoLeague(leagueId: string, successorMembershipId?: string): Promise<void> {
   const client = requireClient();
   const { error } = await client.rpc("leave_my_league", { target_league_id: leagueId, successor_membership_id: successorMembershipId ?? null });
