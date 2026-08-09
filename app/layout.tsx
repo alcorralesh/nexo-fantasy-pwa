@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { PwaManager } from "./PwaManager";
+import { appBasePath, withBasePath } from "./base-path";
 
 export const metadata: Metadata = {
   metadataBase: new URL(
@@ -9,10 +10,10 @@ export const metadata: Metadata = {
   title: "Nexo Fantasy",
   description: "Tu fútbol, tus equipos, tus reglas.",
   applicationName: "Nexo Fantasy",
-  manifest: "/manifest.webmanifest",
+  manifest: withBasePath("/manifest.webmanifest"),
   icons: {
-    icon: [{ url: "/pwa/icon-192.png", sizes: "192x192", type: "image/png" }, { url: "/pwa/icon-512.png", sizes: "512x512", type: "image/png" }],
-    apple: [{ url: "/pwa/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    icon: [{ url: withBasePath("/pwa/icon-192.png"), sizes: "192x192", type: "image/png" }, { url: withBasePath("/pwa/icon-512.png"), sizes: "512x512", type: "image/png" }],
+    apple: [{ url: withBasePath("/pwa/apple-touch-icon.png"), sizes: "180x180", type: "image/png" }],
   },
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Nexo" },
   formatDetection: { telephone: false },
@@ -47,9 +48,10 @@ export default function RootLayout({
   return (
     <html lang="es">
       <head>
-        <link rel="apple-touch-startup-image" href="/pwa/splash-1170x2532.png" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)" />
-        <link rel="apple-touch-startup-image" href="/pwa/splash-1290x2796.png" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)" />
-        <link rel="apple-touch-startup-image" href="/pwa/splash-2048x2732.png" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2)" />
+        <meta name="nexo-base-path" content={appBasePath} />
+        <link rel="apple-touch-startup-image" href={withBasePath("/pwa/splash-1170x2532.png")} media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)" />
+        <link rel="apple-touch-startup-image" href={withBasePath("/pwa/splash-1290x2796.png")} media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)" />
+        <link rel="apple-touch-startup-image" href={withBasePath("/pwa/splash-2048x2732.png")} media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2)" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body>{children}<PwaManager /></body>

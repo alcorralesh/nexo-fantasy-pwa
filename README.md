@@ -19,6 +19,14 @@ La primera versión es un prototipo navegable con datos de demostración. Incluy
 
 Todavía no hay base de datos, cuentas reales ni conexión con una API deportiva.
 
+## Versión publicada
+
+La PWA se publica en GitHub Pages en:
+
+https://alcorralesh.github.io/nexo-fantasy-pwa/
+
+Cada cambio enviado a la rama `main` genera y publica automáticamente una nueva versión mediante GitHub Actions.
+
 ## Desarrollo local
 
 Requiere Node.js 22.13 o posterior y pnpm.

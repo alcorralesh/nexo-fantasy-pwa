@@ -6,6 +6,7 @@ export const fantasyRepository: FantasyRepository = demoFantasyRepository;
 
 export type {
   CompetitionName,
+  CompetitionSummary,
   FantasyBootstrapData,
   FantasyTeamSummary,
   InitialSquad,

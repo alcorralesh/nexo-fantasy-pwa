@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { appBasePath } from "./base-path";
 
 interface InstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -36,7 +37,7 @@ export function PwaManager() {
     if (isIos && !standalone && !previouslyDismissed) setShowIosHelp(true);
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js", { scope: "/" }).then((registration) => {
+      navigator.serviceWorker.register(`${appBasePath}/sw.js`, { scope: `${appBasePath}/` }).then((registration) => {
         if (registration.waiting) setUpdateWorker(registration.waiting);
         registration.addEventListener("updatefound", () => {
           const worker = registration.installing;

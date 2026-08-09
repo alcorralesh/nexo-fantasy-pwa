@@ -1,7 +1,9 @@
 const CACHE_VERSION = "nexo-pwa-v1";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
-const APP_SHELL = ["/", "/privacy", "/terms", "/offline.html", "/manifest.webmanifest", "/pwa/icon-192.png", "/pwa/icon-512.png", "/pwa/icon-maskable-512.png"];
+const BASE_PATH = new URL("./", self.registration.scope).pathname.replace(/\/$/, "");
+const appUrl = (path) => `${BASE_PATH}${path}` || "/";
+const APP_SHELL = [appUrl("/"), appUrl("/privacy/"), appUrl("/terms/"), appUrl("/offline.html"), appUrl("/manifest.webmanifest"), appUrl("/pwa/icon-192.png"), appUrl("/pwa/icon-512.png"), appUrl("/pwa/icon-maskable-512.png")];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.addAll(APP_SHELL)));
@@ -26,7 +28,7 @@ self.addEventListener("fetch", (event) => {
       const copy = response.clone();
       caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
       return response;
-    }).catch(async () => (await caches.match(request)) || (await caches.match("/")) || caches.match("/offline.html")));
+    }).catch(async () => (await caches.match(request)) || (await caches.match(appUrl("/"))) || caches.match(appUrl("/offline.html"))));
     return;
   }
 
