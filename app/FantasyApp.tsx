@@ -14,6 +14,7 @@ import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLe
 import { loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, runNexoPlayerCatalogSync, updateNexoPlayer, type CatalogSyncJob, type CatalogSyncResult } from "./services/nexo-players";
 import { loadNexoCalendarSyncHistory, loadNexoMatchCalendar, runNexoCalendarSync, type CalendarSyncJob, type CalendarSyncResult, type MatchFixture } from "./services/nexo-calendar";
 import { loadNexoMatchdayLineups, loadNexoMatchdayStates, saveNexoMatchdayLineup, type NexoMatchdayState } from "./services/nexo-matchdays";
+import { createNexoChallenge, loadNexoChallenges, snapshotNexoChallenge } from "./services/nexo-challenges";
 import { withBasePath } from "./base-path";
 
 type Section = "inicio" | "equipo" | "tendencias" | "ligas" | "liga" | "perfil" | "ayuda" | "admin";
@@ -1425,7 +1426,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     mode: "market" | "fantasy";
     eventId?: string | null;
   } | null>(null);
-  const [fantasyEvents, setFantasyEvents] = useState<FantasyEvent[]>(() => createDemoFantasyEvents());
+  const [fantasyEvents, setFantasyEvents] = useState<FantasyEvent[]>([]);
   const [privateLeagueCreatorOpen, setPrivateLeagueCreatorOpen] = useState(false);
   const [managedPrivateLeagueId, setManagedPrivateLeagueId] = useState<string | null>(null);
   const [privateJoinInvite, setPrivateJoinInvite] = useState<PrivateLeagueInvite | null>(null);
@@ -1688,6 +1689,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     void refreshBackendCalendar();
     void refreshBackendLineups();
     void refreshBackendMatchdays();
+    void refreshBackendChallenges();
   }
 
   async function refreshBackendLeagues() {
@@ -1748,6 +1750,14 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       setBackendMatchdays(await loadNexoMatchdayStates());
     } catch {
       /* El selector mantiene la Jornada 1 hasta que el ciclo esté disponible. */
+    }
+  }
+
+  async function refreshBackendChallenges() {
+    try {
+      setFantasyEvents(await loadNexoChallenges());
+    } catch {
+      if (sessionUser?.id === "demo_user") setFantasyEvents(createDemoFantasyEvents());
     }
   }
 
@@ -1960,7 +1970,23 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     setFantasyJoinOpen(true);
   }
 
-  function createFantasyEvent(event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) {
+  async function createFantasyEvent(event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) {
+    if (sessionUser?.id !== "demo_user" && event.format !== "matchdays") {
+      await createNexoChallenge({
+        name: event.name,
+        description: event.description,
+        format: event.format,
+        fixtureIds: event.fixtures.map((fixture) => fixture.id),
+        lineupPolicy: event.lineupPolicy,
+        maxPlayersPerClub: event.maxPlayersPerClub,
+        capacity: event.capacity,
+        featured: event.featured,
+        budgetPercentile: event.budgetPercentile,
+      });
+      await Promise.all([refreshBackendChallenges(), refreshBackendLeagues()]);
+      notify(event.previousMatchday === 0 ? "Reto de Jornada 1 creado · presupuesto inicial congelado" : `${event.format === "partidazo" ? "Partido de la jornada" : "Clásicos de la jornada"} anunciado · presupuesto pendiente`);
+      return;
+    }
     const next: FantasyEvent = {
       ...event,
       id: `fantasy_event_${crypto.randomUUID()}`,
@@ -1971,7 +1997,13 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     notify(`${event.format === "partidazo" ? "El Partidazo" : "Evento fantástico"} publicado · presupuesto pendiente`);
   }
 
-  function snapshotFantasyEvent(eventId: string) {
+  async function snapshotFantasyEvent(eventId: string) {
+    if (sessionUser?.id !== "demo_user" && fantasyEvents.some((event) => event.id === eventId)) {
+      await snapshotNexoChallenge(eventId);
+      await Promise.all([refreshBackendChallenges(), refreshBackendLeagues()]);
+      notify("Precios y presupuesto congelados");
+      return;
+    }
     setFantasyEvents((current) =>
       current.map((event) =>
         event.id === eventId
@@ -3057,6 +3089,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
               playerOffers={playerOffers}
               sentOffers={sentOffers}
               playerCatalog={adminPlayerCatalog}
+              matchFixtures={matchFixtures}
               catalogSyncEnabled={sessionUser.id !== "demo_user"}
               onCatalogSyncApplied={refreshBackendPlayerCatalog}
               onSavePlayer={async (player) => {
@@ -3113,7 +3146,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
           initialEventId={fantasyJoinEventId}
           competitions={initialData.competitions}
           teams={teams}
-          publicLeagues={[...availablePublicLeagues.filter((league) => league.mode === "fantasy"), ...fantasyEventLeagues]}
+          publicLeagues={[...availablePublicLeagues.filter((league) => league.mode === "fantasy" && !fantasyEvents.some((event) => event.id === league.id)), ...fantasyEventLeagues]}
           fantasyEvents={fantasyEvents}
           participations={participations}
           clubRules={clubRules}
@@ -5594,7 +5627,14 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
       <LeagueAreaNav section={section} onChange={onSectionChange} />
 
       {section === "resumen" && <LeagueOverview league={league} team={team} squad={squad} budget={participation?.budget ?? 100} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} privateParticipants={privateParticipants} onSectionChange={onSectionChange} notify={notify} />}
-      {section === "equipo" && <LeagueSquadView squad={squad} starters={starters} league={league} marketPlayers={fantasyScopedPlayers} fixtures={fixtures} participationId={participation?.id ?? ""} budget={participation?.budget ?? 0} fantasyMatchdayBudget={fantasyEvent?.snapshot?.budget ?? marketRules.fantasyMatchdayBudget} fantasyOptions={marketRules} fantasyEvent={fantasyEvent} scoringRules={scoringRules} fantasyLineup={fantasyLineup} previousFantasyLineup={previousFantasyLineup} onSaveFantasyLineup={onSaveFantasyLineup} playerContracts={playerContracts} playerOffers={playerOffers} onChangePlayerContract={onChangePlayerContract} onCreatePlayerOffer={onCreatePlayerOffer} onRespondPlayerOffer={onRespondPlayerOffer} onAdjustBudget={onAdjustBudget} onImmediateSale={onImmediateSale} notify={notify} />}
+      {section === "equipo" && fantasyEvent && !fantasyEvent.snapshot && (
+        <article className="matchday-pending-state">
+          <span>◷</span>
+          <h3>Presupuesto pendiente</h3>
+          <p>Podrás montar el once cuando se cierre la Jornada {fantasyEvent.previousMatchday} y el backend congele los valores de mercado de los clubes incluidos.</p>
+        </article>
+      )}
+      {section === "equipo" && (!fantasyEvent || fantasyEvent.snapshot) && <LeagueSquadView squad={squad} starters={starters} league={league} marketPlayers={fantasyScopedPlayers} fixtures={fixtures} participationId={participation?.id ?? ""} budget={participation?.budget ?? 0} fantasyMatchdayBudget={fantasyEvent?.snapshot?.budget ?? marketRules.fantasyMatchdayBudget} fantasyOptions={marketRules} fantasyEvent={fantasyEvent} scoringRules={scoringRules} fantasyLineup={fantasyLineup} previousFantasyLineup={previousFantasyLineup} onSaveFantasyLineup={onSaveFantasyLineup} playerContracts={playerContracts} playerOffers={playerOffers} onChangePlayerContract={onChangePlayerContract} onCreatePlayerOffer={onCreatePlayerOffer} onRespondPlayerOffer={onRespondPlayerOffer} onAdjustBudget={onAdjustBudget} onImmediateSale={onImmediateSale} notify={notify} />}
       {section === "mercado" && <LeagueMarketView league={league} players={fantasyScopedPlayers} squad={squad} budget={participation?.budget ?? 100} rules={marketRules} bids={bids} onChangeBids={onChangeBids} ownedListings={ownedMarketListings} receivedOffers={receivedMarketOffers} onRespondOffer={onRespondPlayerOffer} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} onGenerateSystemOffers={() => ownedMarketListings.forEach(({ player }) => onCreatePlayerOffer(player, "game"))} notify={notify} />}
       {section === "jornada" && <LeagueMatchdayView squad={squad} competition={league.competition} fixtures={fixtures} scoringRules={scoringRules} settlementRules={settlementRules} onPrepareTeam={() => onSectionChange("equipo")} notify={notify} />}
       {section === "clasificacion" && <LeagueRankingView team={team} competition={league.competition} budget={participation?.budget ?? 0} rules={marketRules} bidCommitment={bids.reduce((total, bid) => total + bid.amount, 0)} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={onClausePurchase} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} currentUserIsAdmin={canManagePrivateLeague} privateAdmin={privateAdmin} onReport={onReport} />}
@@ -10888,18 +10928,18 @@ const adminDemoActivity = [
   },
 ];
 
-function FantasyEventsAdminPanel({ events, onCreate, onSnapshot }: { events: FantasyEvent[]; onCreate: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => void; onSnapshot: (eventId: string) => void }) {
+function FantasyEventsAdminPanel({ events, fixtures, onCreate, onSnapshot }: { events: FantasyEvent[]; fixtures: MatchFixture[]; onCreate: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshot: (eventId: string) => Promise<void> | void }) {
   const [creatorOpen, setCreatorOpen] = useState(false);
   return (
     <section className="admin-panel fantasy-events-admin">
       <div className="section-title">
         <div>
           <p className="eyebrow">EVENTOS FANTÁSTICOS</p>
-          <h2>Partidazos, partidos y jornadas</h2>
-          <p>Crea eventos ahora y publica precios solo cuando cierre su jornada anterior.</p>
+          <h2>Retos de la jornada</h2>
+          <p>Crea el partido principal o combina dos clásicos del calendario oficial.</p>
         </div>
         <button className="primary-button" onClick={() => setCreatorOpen(true)}>
-          ＋ Crear evento
+          ＋ Crear reto
         </button>
       </div>
       <div className="fantasy-admin-event-list">
@@ -10919,15 +10959,16 @@ function FantasyEventsAdminPanel({ events, onCreate, onSnapshot }: { events: Fan
               <strong>{event.snapshot ? `${event.snapshot.budget.toFixed(1).replace(".", ",")} M` : "Presupuesto pendiente"}</strong>
               <span>{event.snapshot ? `${Object.keys(event.snapshot.playerPrices).length} precios · P${event.snapshot.percentile}` : `${event.memberCount} inscritos`}</span>
             </div>
-            {!event.snapshot ? <button onClick={() => onSnapshot(event.id)}>Simular cierre y calcular</button> : <b>✓ BLOQUEADO</b>}
+            {!event.snapshot ? <b>◷ SE ACTIVA AL CERRAR J{event.previousMatchday}</b> : <b>✓ BLOQUEADO</b>}
           </article>
         ))}
       </div>
       {creatorOpen && (
         <CreateFantasyEventDialog
+          fixtures={fixtures}
           onClose={() => setCreatorOpen(false)}
-          onCreate={(event) => {
-            onCreate(event);
+          onCreate={async (event) => {
+            await onCreate(event);
             setCreatorOpen(false);
           }}
         />
@@ -10957,14 +10998,12 @@ function buildFantasyFixtureCalendar(competition: CompetitionName): FantasyEvent
   });
 }
 
-function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; onCreate: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => void }) {
+function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: MatchFixture[]; onClose: () => void; onCreate: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void }) {
   const [format, setFormat] = useState<FantasyEventFormat>("partidazo");
   const [competition, setCompetition] = useState<CompetitionName>("Primera");
-  const clubs = useMemo(() => Array.from(new Set(competitionPlayers[competition].map((player) => player.club))), [competition]);
-  const calendar = useMemo(() => buildFantasyFixtureCalendar(competition), [competition]);
+  const calendar = useMemo(() => fixtures.filter((fixture) => fixture.competition === competition && fixture.status !== "cancelled").map((fixture) => ({ id: fixture.id, home: fixture.home, away: fixture.away, matchday: fixture.matchday, kickoffLabel: fixture.kickoffAt ? new Intl.DateTimeFormat("es-ES", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(fixture.kickoffAt)) : `Jornada ${fixture.matchday}` })), [competition, fixtures]);
+  const visibleMatchdays = useMemo(() => Array.from(new Set(calendar.map((fixture) => fixture.matchday))).sort((a, b) => a - b).slice(0, 5), [calendar]);
   const [name, setName] = useState("El Partidazo");
-  const [home, setHome] = useState(clubs[0]);
-  const [away, setAway] = useState(clubs[1] ?? clubs[0]);
   const [selectedFixtureIds, setSelectedFixtureIds] = useState<string[]>([]);
   const [previousMatchday, setPreviousMatchday] = useState(5);
   const [endMatchday, setEndMatchday] = useState(8);
@@ -10977,13 +11016,10 @@ function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; 
   const selectedFixtures = calendar.filter((fixture) => selectedFixtureIds.includes(fixture.id));
   const selectedMatchdays = Array.from(new Set(selectedFixtures.map((fixture) => fixture.matchday))).sort((a, b) => a - b);
   const selectedClubs = new Set(selectedFixtures.flatMap((fixture) => [fixture.home, fixture.away]));
-  const snapshotAfterMatchday = format === "matches" && selectedMatchdays.length ? selectedMatchdays[0] - 1 : previousMatchday;
+  const snapshotAfterMatchday = selectedMatchdays.length ? Math.max(0, selectedMatchdays[0] - 1) : previousMatchday;
 
   function changeCompetition(value: CompetitionName) {
-    const nextClubs = Array.from(new Set(competitionPlayers[value].map((player) => player.club)));
     setCompetition(value);
-    setHome(nextClubs[0]);
-    setAway(nextClubs[1] ?? nextClubs[0]);
     setSelectedFixtureIds([]);
     setError("");
   }
@@ -10994,51 +11030,45 @@ function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; 
     if (value === "matches" && name === "El Partidazo") setName("Partidos de la semana");
   }
   function toggleFixture(fixtureId: string) {
-    setSelectedFixtureIds((current) => (current.includes(fixtureId) ? current.filter((id) => id !== fixtureId) : [...current, fixtureId]));
+    const fixture = calendar.find((item) => item.id === fixtureId);
+    setSelectedFixtureIds((current) => {
+      if (current.includes(fixtureId)) return current.filter((id) => id !== fixtureId);
+      if (format === "partidazo") return [fixtureId];
+      const sameMatchday = current.filter((id) => calendar.find((item) => item.id === id)?.matchday === fixture?.matchday);
+      return [...sameMatchday, fixtureId].slice(-2);
+    });
     setError("");
   }
   function toggleMatchday(matchday: number) {
     const ids = calendar.filter((fixture) => fixture.matchday === matchday).map((fixture) => fixture.id);
-    setSelectedFixtureIds((current) => (ids.every((id) => current.includes(id)) ? current.filter((id) => !ids.includes(id)) : Array.from(new Set([...current, ...ids]))));
+    setSelectedFixtureIds((current) => (ids.slice(0, 2).every((id) => current.includes(id)) ? [] : ids.slice(0, 2)));
   }
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
     if (name.trim().length < 3) {
       setError("Escribe un nombre válido.");
       return;
     }
-    if (format === "partidazo" && home === away) {
-      setError("Los dos equipos del partido deben ser distintos.");
+    if (format === "partidazo" && selectedFixtures.length !== 1) {
+      setError("Selecciona el partido principal de la jornada.");
       return;
     }
-    if (format === "matches" && selectedFixtures.length < 2) {
-      setError("Selecciona al menos dos partidos del calendario.");
+    if (format === "matches" && selectedFixtures.length !== 2) {
+      setError("Selecciona exactamente dos partidos de la misma jornada.");
       return;
     }
     const competitionId = competition === "Primera" ? "comp_primera" : competition === "Segunda" ? "comp_segunda" : "comp_liga_f";
-    const fixtures: FantasyEventFixture[] =
-      format === "partidazo"
-        ? [
-            {
-              id: `fixture_${crypto.randomUUID()}`,
-              home,
-              away,
-              matchday: previousMatchday + 1,
-              kickoffLabel: `Jornada ${previousMatchday + 1}`,
-            },
-          ]
-        : format === "matches"
-          ? selectedFixtures
-          : [];
-    const matchdays = format === "matchdays" ? Array.from({ length: Math.max(1, endMatchday - previousMatchday) }, (_, index) => previousMatchday + 1 + index) : format === "matches" ? selectedMatchdays : [previousMatchday + 1];
+    const eventFixtures: FantasyEventFixture[] = selectedFixtures;
+    const matchdays = selectedMatchdays;
     const effectiveLineupPolicy = format === "partidazo" || (format === "matches" && matchdays.length === 1) ? "fixed" : lineupPolicy;
-    onCreate({
+    try {
+      await onCreate({
       name: name.trim(),
-      description: format === "partidazo" ? `${home} contra ${away}. Un partido, un once, una clasificación.` : format === "matches" ? `${fixtures.length} partidos seleccionados de ${matchdays.length} ${matchdays.length === 1 ? "jornada" : "jornadas"}.` : "Competición fantástica de varias jornadas.",
+      description: format === "partidazo" ? `${eventFixtures[0].home} contra ${eventFixtures[0].away}. Un partido, un once, una clasificación.` : `${eventFixtures.length} partidos seleccionados de la Jornada ${matchdays[0]}.`,
       competition,
       competitionId,
       format,
-      fixtures,
+      fixtures: eventFixtures,
       matchdays,
       lineupPolicy: effectiveLineupPolicy,
       maxPlayersPerClub,
@@ -11046,7 +11076,10 @@ function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; 
       featured: format === "partidazo" && featured,
       previousMatchday: snapshotAfterMatchday,
       budgetPercentile: percentile,
-    });
+      });
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "No se ha podido crear el reto.");
+    }
   }
 
   return (
@@ -11063,9 +11096,9 @@ function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; 
         </div>
         <form onSubmit={submit}>
           <div className="fantasy-event-format-tabs">
-            {(["partidazo", "matches", "matchdays"] as FantasyEventFormat[]).map((item) => (
+            {(["partidazo", "matches"] as FantasyEventFormat[]).map((item) => (
               <button type="button" className={format === item ? "active" : ""} key={item} onClick={() => changeFormat(item)}>
-                {item === "partidazo" ? "★ El Partidazo" : item === "matches" ? "Varios partidos" : "Varias jornadas"}
+                {item === "partidazo" ? "★ Partido de la jornada" : "◆ Clásicos de la jornada"}
               </button>
             ))}
           </div>
@@ -11082,32 +11115,7 @@ function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; 
                 ))}
               </select>
             </label>
-            {format === "partidazo" && (
-              <>
-                <label>
-                  <span>Local</span>
-                  <select value={home} onChange={(event) => setHome(event.target.value)}>
-                    {clubs.map((club) => (
-                      <option key={club}>{club}</option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span>Visitante</span>
-                  <select value={away} onChange={(event) => setAway(event.target.value)}>
-                    {clubs.map((club) => (
-                      <option key={club}>{club}</option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            )}
-            {format !== "matches" && (
-              <label>
-                <span>Jornada anterior</span>
-                <input type="number" min="1" max="37" value={previousMatchday} onChange={(event) => setPreviousMatchday(Number(event.target.value))} />
-              </label>
-            )}
+
             {format === "matchdays" && (
               <label>
                 <span>Última jornada incluida</span>
@@ -11136,13 +11144,13 @@ function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; 
               </label>
             )}
           </div>
-          {format === "matches" && (
+          {(format === "matches" || format === "partidazo") && (
             <section className="fantasy-fixture-picker">
               <header>
                 <div>
                   <p className="eyebrow">CALENDARIO · {competition.toUpperCase()}</p>
                   <h3>Selecciona los encuentros</h3>
-                  <p>Puedes combinar partidos de una o varias jornadas.</p>
+                  <p>{format === "partidazo" ? "Elige un único encuentro oficial." : "Elige exactamente dos encuentros de la misma jornada."}</p>
                 </div>
                 <strong>
                   {selectedFixtures.length}
@@ -11150,7 +11158,7 @@ function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; 
                 </strong>
               </header>
               <div className="fantasy-calendar-matchdays">
-                {[6, 7, 8].map((matchday) => {
+                {visibleMatchdays.map((matchday) => {
                   const fixtures = calendar.filter((fixture) => fixture.matchday === matchday);
                   const allSelected = fixtures.length > 0 && fixtures.every((fixture) => selectedFixtureIds.includes(fixture.id));
                   return (
@@ -11161,9 +11169,9 @@ function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; 
                           <strong>Jornada {matchday}</strong>
                           <small>{fixtures.length} partidos disponibles</small>
                         </p>
-                        <button type="button" onClick={() => toggleMatchday(matchday)}>
+                        {format === "matches" && <button type="button" onClick={() => toggleMatchday(matchday)}>
                           {allSelected ? "Quitar todos" : "Seleccionar jornada"}
-                        </button>
+                        </button>}
                       </div>
                       <section>
                         {fixtures.map((fixture) => {
@@ -11197,7 +11205,7 @@ function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; 
                 </strong>
                 <small>{selectedMatchdays.length === 1 ? "Se utilizará una única alineación." : lineupPolicy === "fixed" ? "Una alineación puntuará durante todo el evento." : "Se podrá preparar una alineación por jornada."}</small>
               </div>
-              <b>Precios tras J{snapshotAfterMatchday}</b>
+              <b>{snapshotAfterMatchday === 0 ? "Instantánea inicial" : `Precios tras J${snapshotAfterMatchday}`}</b>
             </article>
           )}
           {format === "partidazo" && (
@@ -11212,8 +11220,8 @@ function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; 
           <article className="snapshot-pending-preview">
             <span>◷</span>
             <p>
-              <strong>Se publicará con presupuesto pendiente</strong>
-              <small>Los valores y el presupuesto se congelarán para todos cuando se cierre la Jornada {snapshotAfterMatchday}.</small>
+              <strong>{snapshotAfterMatchday === 0 ? "Presupuesto inicial al publicar" : "Se publicará con presupuesto pendiente"}</strong>
+              <small>{snapshotAfterMatchday === 0 ? "Al ser la Jornada 1, los valores vigentes se congelarán inmediatamente para todos." : `Los valores y el presupuesto se congelarán para todos cuando se cierre la Jornada ${snapshotAfterMatchday}.`}</small>
             </p>
           </article>
           {error && <p className="form-error">{error}</p>}
@@ -11231,7 +11239,7 @@ function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; 
   );
 }
 
-function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, economyRules, setEconomyRules, settlementRules, setSettlementRules, onboardingConfig, onForceOnboarding, legalConfig, onPublishLegalVersion, scoringRules, onChangeScoringRules, teams, leagues, participations, squads, bids, playerContracts, playerOffers, sentOffers, playerCatalog, catalogSyncEnabled, onCatalogSyncApplied, onSavePlayer, fantasyEvents, onCreateFantasyEvent, onSnapshotFantasyEvent, onOpenLeague, onRenewMarket, notify }: { marketRules: MarketRules; setMarketRules: (rules: MarketRules) => void; clubRules: ClubRules; setClubRules: (rules: ClubRules) => void; economyRules: EconomyRules; setEconomyRules: (rules: EconomyRules) => void; settlementRules: MatchdaySettlementRules; setSettlementRules: (rules: MatchdaySettlementRules) => void; onboardingConfig: OnboardingConfig; onForceOnboarding: (reason: string) => void; legalConfig: LegalConfig; onPublishLegalVersion: (kind: "privacy" | "terms", changeSummary: string) => void; scoringRules: ScoringRule[]; onChangeScoringRules: (rules: ScoringRule[]) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; squads: Record<string, InitialSquad>; bids: Record<string, MarketBid[]>; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; sentOffers: Record<string, SentOffer[]>; playerCatalog: Record<CompetitionName, CompetitionPlayer[]>; catalogSyncEnabled: boolean; onCatalogSyncApplied: () => Promise<void>; onSavePlayer: (player: CompetitionPlayer) => Promise<void>; fantasyEvents: FantasyEvent[]; onCreateFantasyEvent: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => void; onSnapshotFantasyEvent: (eventId: string) => void; onOpenLeague: (leagueId: string) => void; onRenewMarket: (leagueId: string) => void; notify: (v: string) => void }) {
+function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, economyRules, setEconomyRules, settlementRules, setSettlementRules, onboardingConfig, onForceOnboarding, legalConfig, onPublishLegalVersion, scoringRules, onChangeScoringRules, teams, leagues, participations, squads, bids, playerContracts, playerOffers, sentOffers, playerCatalog, matchFixtures, catalogSyncEnabled, onCatalogSyncApplied, onSavePlayer, fantasyEvents, onCreateFantasyEvent, onSnapshotFantasyEvent, onOpenLeague, onRenewMarket, notify }: { marketRules: MarketRules; setMarketRules: (rules: MarketRules) => void; clubRules: ClubRules; setClubRules: (rules: ClubRules) => void; economyRules: EconomyRules; setEconomyRules: (rules: EconomyRules) => void; settlementRules: MatchdaySettlementRules; setSettlementRules: (rules: MatchdaySettlementRules) => void; onboardingConfig: OnboardingConfig; onForceOnboarding: (reason: string) => void; legalConfig: LegalConfig; onPublishLegalVersion: (kind: "privacy" | "terms", changeSummary: string) => void; scoringRules: ScoringRule[]; onChangeScoringRules: (rules: ScoringRule[]) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; squads: Record<string, InitialSquad>; bids: Record<string, MarketBid[]>; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; sentOffers: Record<string, SentOffer[]>; playerCatalog: Record<CompetitionName, CompetitionPlayer[]>; matchFixtures: MatchFixture[]; catalogSyncEnabled: boolean; onCatalogSyncApplied: () => Promise<void>; onSavePlayer: (player: CompetitionPlayer) => Promise<void>; fantasyEvents: FantasyEvent[]; onCreateFantasyEvent: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshotFantasyEvent: (eventId: string) => Promise<void> | void; onOpenLeague: (leagueId: string) => void; onRenewMarket: (leagueId: string) => void; notify: (v: string) => void }) {
   const [section, setSection] = useState<AdminSection>("overview");
   const [selectedUserId, setSelectedUserId] = useState(adminDemoUsers[0].id);
   const [selectedLeagueId, setSelectedLeagueId] = useState(leagues[0]?.id ?? "");
@@ -11351,7 +11359,7 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, econo
             </article>
           </section>
           <CalendarSyncAdminPanel enabled={catalogSyncEnabled} notify={notify} />
-          <FantasyEventsAdminPanel events={fantasyEvents} onCreate={onCreateFantasyEvent} onSnapshot={onSnapshotFantasyEvent} />
+          <FantasyEventsAdminPanel events={fantasyEvents} fixtures={matchFixtures} onCreate={onCreateFantasyEvent} onSnapshot={onSnapshotFantasyEvent} />
           <MatchdaySettlementAdminPanel rules={settlementRules} onChange={setSettlementRules} notify={notify} />
           <OnboardingAdminPanel config={onboardingConfig} onForce={onForceOnboarding} />
           <LegalVersionsAdminPanel config={legalConfig} onPublish={onPublishLegalVersion} />
