@@ -1984,7 +1984,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
         budgetPercentile: event.budgetPercentile,
       });
       await Promise.all([refreshBackendChallenges(), refreshBackendLeagues()]);
-      notify(event.previousMatchday === 0 ? "Reto de Jornada 1 creado · presupuesto inicial congelado" : `${event.format === "partidazo" ? "Partido de la jornada" : "Clásicos de la jornada"} anunciado · presupuesto pendiente`);
+      notify(event.previousMatchday === 0 ? "Liga fantástica creada · presupuesto inicial congelado" : "Liga fantástica anunciada · presupuesto pendiente");
       return;
     }
     const next: FantasyEvent = {
@@ -10935,11 +10935,11 @@ function FantasyEventsAdminPanel({ events, fixtures, onCreate, onSnapshot }: { e
       <div className="section-title">
         <div>
           <p className="eyebrow">EVENTOS FANTÁSTICOS</p>
-          <h2>Retos de la jornada</h2>
-          <p>Crea el partido principal o combina dos clásicos del calendario oficial.</p>
+          <h2>Ligas fantásticas especiales</h2>
+          <p>Escribe su nombre y decide si incluye un partido o varios encuentros oficiales.</p>
         </div>
         <button className="primary-button" onClick={() => setCreatorOpen(true)}>
-          ＋ Crear reto
+          ＋ Crear liga fantástica
         </button>
       </div>
       <div className="fantasy-admin-event-list">
@@ -11030,18 +11030,16 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
     if (value === "matches" && name === "El Partidazo") setName("Partidos de la semana");
   }
   function toggleFixture(fixtureId: string) {
-    const fixture = calendar.find((item) => item.id === fixtureId);
     setSelectedFixtureIds((current) => {
       if (current.includes(fixtureId)) return current.filter((id) => id !== fixtureId);
       if (format === "partidazo") return [fixtureId];
-      const sameMatchday = current.filter((id) => calendar.find((item) => item.id === id)?.matchday === fixture?.matchday);
-      return [...sameMatchday, fixtureId].slice(-2);
+      return [...current, fixtureId];
     });
     setError("");
   }
   function toggleMatchday(matchday: number) {
     const ids = calendar.filter((fixture) => fixture.matchday === matchday).map((fixture) => fixture.id);
-    setSelectedFixtureIds((current) => (ids.slice(0, 2).every((id) => current.includes(id)) ? [] : ids.slice(0, 2)));
+    setSelectedFixtureIds((current) => (ids.every((id) => current.includes(id)) ? current.filter((id) => !ids.includes(id)) : Array.from(new Set([...current, ...ids]))));
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -11053,8 +11051,8 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
       setError("Selecciona el partido principal de la jornada.");
       return;
     }
-    if (format === "matches" && selectedFixtures.length !== 2) {
-      setError("Selecciona exactamente dos partidos de la misma jornada.");
+    if (format === "matches" && selectedFixtures.length < 2) {
+      setError("Selecciona al menos dos partidos oficiales.");
       return;
     }
     const competitionId = competition === "Primera" ? "comp_primera" : competition === "Segunda" ? "comp_segunda" : "comp_liga_f";
@@ -11064,7 +11062,7 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
     try {
       await onCreate({
       name: name.trim(),
-      description: format === "partidazo" ? `${eventFixtures[0].home} contra ${eventFixtures[0].away}. Un partido, un once, una clasificación.` : `${eventFixtures.length} partidos seleccionados de la Jornada ${matchdays[0]}.`,
+      description: format === "partidazo" ? `${eventFixtures[0].home} contra ${eventFixtures[0].away}. Un partido, un once, una clasificación.` : `${eventFixtures.length} partidos seleccionados en ${matchdays.length} ${matchdays.length === 1 ? "jornada" : "jornadas"}.`,
       competition,
       competitionId,
       format,
@@ -11098,7 +11096,7 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
           <div className="fantasy-event-format-tabs">
             {(["partidazo", "matches"] as FantasyEventFormat[]).map((item) => (
               <button type="button" className={format === item ? "active" : ""} key={item} onClick={() => changeFormat(item)}>
-                {item === "partidazo" ? "★ Partido de la jornada" : "◆ Clásicos de la jornada"}
+                {item === "partidazo" ? "★ Un partido" : "◆ Varios partidos"}
               </button>
             ))}
           </div>
@@ -11150,7 +11148,7 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
                 <div>
                   <p className="eyebrow">CALENDARIO · {competition.toUpperCase()}</p>
                   <h3>Selecciona los encuentros</h3>
-                  <p>{format === "partidazo" ? "Elige un único encuentro oficial." : "Elige exactamente dos encuentros de la misma jornada."}</p>
+                  <p>{format === "partidazo" ? "Elige un único encuentro oficial." : "Elige dos o más encuentros; el nombre de la liga es completamente libre."}</p>
                 </div>
                 <strong>
                   {selectedFixtures.length}
