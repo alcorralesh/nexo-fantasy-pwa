@@ -3,7 +3,7 @@ import type { CompetitionPlayer } from "../data/competition-players";
 import { getSupabaseClient } from "../lib/supabase-client";
 
 const competitionNames: Record<string, CompetitionName> = { primera: "Primera", segunda: "Segunda", liga_f: "Liga F" };
-const catalogCacheKey = "nexo_player_catalog_2026_27_v1";
+const catalogCacheKey = "nexo_player_catalog_2026_27_v2";
 const catalogCacheLifetime = 6 * 60 * 60 * 1000;
 
 export type CatalogSyncSummary = {

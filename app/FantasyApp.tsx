@@ -327,6 +327,27 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     Segunda: competitionPlayers.Segunda.map((player) => ({ ...player })),
     "Liga F": competitionPlayers["Liga F"].map((player) => ({ ...player })),
   }));
+  useEffect(() => {
+    const catalogById = new Map(
+      Object.values(adminPlayerCatalog).flat().map((player) => [player.id, player] as const),
+    );
+    setInitialSquads((current) => {
+      let changed = false;
+      const next = Object.fromEntries(Object.entries(current).map(([participationId, squad]) => {
+        let squadChanged = false;
+        const players = squad.players.map((player) => {
+          if (player.photoUrl) return player;
+          const photoUrl = catalogById.get(player.id)?.photoUrl;
+          if (!photoUrl) return player;
+          changed = true;
+          squadChanged = true;
+          return { ...player, photoUrl };
+        });
+        return [participationId, squadChanged ? { ...squad, players } : squad];
+      }));
+      return changed ? next : current;
+    });
+  }, [adminPlayerCatalog]);
   useEffect(() => { window.localStorage.setItem("nexo_fantasy_lineups_v1", JSON.stringify(fantasyLineups)); }, [fantasyLineups]);
   useEffect(() => {
     let cancelled = false;
