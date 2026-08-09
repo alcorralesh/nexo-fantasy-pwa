@@ -82,6 +82,7 @@ export interface MarketPlayer {
   points: number;
   price: number;
   trend: string;
+  photoUrl?: string;
 }
 
 export interface LineupPlayer {
