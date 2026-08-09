@@ -34,6 +34,28 @@ export type NexoLeagueMarket = {
   myBids: NexoMarketBid[];
 };
 
+export type NexoMarketHistoryEntry = {
+  id: string;
+  eventType: "bid" | "transfer";
+  direction: "made" | "received" | "system";
+  title: string;
+  detail: string;
+  playerName: string;
+  amount?: number;
+  status: "active" | "completed" | "rejected" | "cancelled" | "expired";
+  occurredAt: string;
+};
+
+export type NexoLeagueActivityEntry = {
+  id: string;
+  activityType: "transfer" | "market" | "membership";
+  actor: string;
+  initials: string;
+  title: string;
+  detail: string;
+  occurredAt: string;
+};
+
 function requireClient() {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase todavía no está configurado.");
@@ -44,6 +66,36 @@ export async function loadNexoLeagueMarket(leagueId: string): Promise<NexoLeague
   const { data, error } = await requireClient().rpc("my_league_market", { target_league_id: leagueId });
   if (error) throw new Error(error.message);
   return mapMarket(data as Record<string, unknown>);
+}
+
+export async function loadNexoLeagueMarketHistory(leagueId: string): Promise<NexoMarketHistoryEntry[]> {
+  const { data, error } = await requireClient().rpc("my_league_market_history", { target_league_id: leagueId });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    id: String(row.id),
+    eventType: row.event_type as NexoMarketHistoryEntry["eventType"],
+    direction: row.direction as NexoMarketHistoryEntry["direction"],
+    title: String(row.title),
+    detail: String(row.detail),
+    playerName: String(row.player_name),
+    amount: row.amount === null || row.amount === undefined ? undefined : Number(row.amount),
+    status: row.status as NexoMarketHistoryEntry["status"],
+    occurredAt: String(row.occurred_at),
+  }));
+}
+
+export async function loadNexoLeagueActivity(leagueId: string): Promise<NexoLeagueActivityEntry[]> {
+  const { data, error } = await requireClient().rpc("my_league_activity", { target_league_id: leagueId });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    id: String(row.id),
+    activityType: row.activity_type as NexoLeagueActivityEntry["activityType"],
+    actor: String(row.actor),
+    initials: String(row.initials),
+    title: String(row.title),
+    detail: String(row.detail),
+    occurredAt: String(row.occurred_at),
+  }));
 }
 
 export async function placeNexoMarketBid(listingId: string, amount: number): Promise<NexoMarketBid> {

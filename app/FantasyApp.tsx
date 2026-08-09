@@ -11,7 +11,7 @@ import { calculatePlayerPoints, defaultScoringRules, demoPlayerMatchStats, type 
 import { createDemoAllocationGateway } from "./services/initial-squad-allocation";
 import { acceptNexoLegalDocuments, completeNexoOnboarding, createNexoTeam, loadNexoIdentity, registerInNexo, sendNexoPasswordReset, signInToNexo, signOutFromNexo, type NexoIdentity, type NexoRegistration } from "./services/nexo-auth";
 import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, regenerateNexoPrivateLeagueCode, reserveNexoLeaguePlace, updateNexoPrivateLeague, type NexoLeagueRankingRow } from "./services/nexo-leagues";
-import { cancelNexoMarketBid, forceNexoMarketRenewal, loadNexoLeagueMarket, placeNexoMarketBid, type NexoLeagueMarket } from "./services/nexo-market";
+import { cancelNexoMarketBid, forceNexoMarketRenewal, loadNexoLeagueActivity, loadNexoLeagueMarket, loadNexoLeagueMarketHistory, placeNexoMarketBid, type NexoLeagueActivityEntry, type NexoLeagueMarket, type NexoMarketHistoryEntry } from "./services/nexo-market";
 import { loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, runNexoPlayerCatalogSync, updateNexoPlayer, type CatalogSyncJob, type CatalogSyncResult } from "./services/nexo-players";
 import { loadNexoCalendarSyncHistory, loadNexoMatchCalendar, runNexoCalendarSync, type CalendarSyncJob, type CalendarSyncResult, type MatchFixture } from "./services/nexo-calendar";
 import { deleteNexoMatchdaySimulation, loadNexoMatchdayLineups, loadNexoMatchdayStates, saveNexoMatchdayLineup, simulateNexoMatchdayClose, type NexoMatchdaySimulation, type NexoMatchdayState, type NexoSimulationScenario } from "./services/nexo-matchdays";
@@ -5574,7 +5574,7 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
       </header>
       <LeagueAreaNav section={section} onChange={onSectionChange} />
 
-      {section === "resumen" && <LeagueOverview league={league} team={team} squad={squad} budget={participation?.budget ?? 100} fantasyEvent={fantasyEvent} fantasyLineup={fantasyLineup} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} privateParticipants={privateParticipants} onSectionChange={onSectionChange} notify={notify} />}
+      {section === "resumen" && <LeagueOverview league={league} team={team} squad={squad} budget={participation?.budget ?? 100} fantasyEvent={fantasyEvent} fantasyLineup={fantasyLineup} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} privateParticipants={privateParticipants} backendEnabled={backendMarketEnabled} rankingRows={rankingRows} onSectionChange={onSectionChange} />}
       {section === "equipo" && fantasyEvent && !fantasyEvent.snapshot && (
         <article className="matchday-pending-state">
           <span>◷</span>
@@ -5591,9 +5591,24 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
   );
 }
 
-function LeagueOverview({ league, team, squad, budget, fantasyEvent, fantasyLineup, isPrivateLeague, privateParticipants, onSectionChange, notify }: { league: LeagueSummary; team: FantasyTeamSummary; squad?: InitialSquad; budget: number; fantasyEvent?: FantasyEvent; fantasyLineup?: FantasyLineupDraft; isPrivateLeague: boolean; privateParticipants: PrivateLeagueParticipant[]; onSectionChange: (section: LeagueAreaSection) => void; notify: (message: string) => void }) {
+function LeagueOverview({ league, team, squad, budget, fantasyEvent, fantasyLineup, isPrivateLeague, privateParticipants, backendEnabled, rankingRows, onSectionChange }: { league: LeagueSummary; team: FantasyTeamSummary; squad?: InitialSquad; budget: number; fantasyEvent?: FantasyEvent; fantasyLineup?: FantasyLineupDraft; isPrivateLeague: boolean; privateParticipants: PrivateLeagueParticipant[]; backendEnabled: boolean; rankingRows: NexoLeagueRankingRow[]; onSectionChange: (section: LeagueAreaSection) => void }) {
   const [activityOpen, setActivityOpen] = useState(false);
-  const leagueActivity = createPrivateLeagueActivity(privateParticipants);
+  const [backendActivity, setBackendActivity] = useState<NexoLeagueActivityEntry[]>([]);
+  useEffect(() => {
+    if (!backendEnabled) return;
+    let active = true;
+    loadNexoLeagueActivity(league.id)
+      .then((entries) => active && setBackendActivity(entries))
+      .catch(() => active && setBackendActivity([]));
+    return () => {
+      active = false;
+    };
+  }, [backendEnabled, league.id]);
+  const leagueActivity: PrivateLeagueActivityEvent[] = backendEnabled
+    ? backendActivity.map((entry) => ({ id: entry.id, type: entry.activityType, actor: entry.actor, initials: entry.initials, title: entry.title, detail: entry.detail, createdAt: Date.parse(entry.occurredAt) }))
+    : createPrivateLeagueActivity(privateParticipants);
+  const currentRanking = rankingRows.find((row) => row.teamId === team.id);
+  const nearbyRanking = backendEnabled ? rankingRows.filter((row) => row.teamId !== team.id).slice(0, 3) : [];
   if (fantasyEvent) return <FantasyChallengeOverview league={league} event={fantasyEvent} lineup={fantasyLineup} onSectionChange={onSectionChange} />;
   return (
     <div className="league-overview">
@@ -5609,8 +5624,8 @@ function LeagueOverview({ league, team, squad, budget, fantasyEvent, fantasyLine
         </div>
         <div className="league-rank-hero">
           <small>POSICIÓN ACTUAL</small>
-          <strong>{league.rank}</strong>
-          <span>0 pts · comienza desde cero</span>
+          <strong>{currentRanking && (currentRanking.totalPoints > 0 || currentRanking.matchdayPoints > 0) ? `${currentRanking.position}.º` : "—"}</strong>
+          <span>{currentRanking?.totalPoints ?? 0} pts {currentRanking?.totalPoints ? "acumulados" : "· comienza desde cero"}</span>
         </div>
       </section>
       <section className="league-kpis">
@@ -5713,6 +5728,7 @@ function LeagueOverview({ league, team, squad, budget, fantasyEvent, fantasyLine
                 <b>›</b>
               </button>
             ))}
+            {leagueActivity.length === 0 && <p className="league-activity-empty">Todavía no hay movimientos confirmados en esta liga.</p>}
             <footer>Las pujas y ofertas activas siguen siendo privadas.</footer>
           </article>
         ) : (
@@ -5722,25 +5738,18 @@ function LeagueOverview({ league, team, squad, budget, fantasyEvent, fantasyLine
                 <p className="eyebrow">ACTIVIDAD</p>
                 <h2>Últimos movimientos</h2>
               </div>
-              <button className="text-button" onClick={() => notify("Actividad completa")}>
+              <button className="text-button" onClick={() => setActivityOpen(true)}>
                 Ver todo
               </button>
             </div>
-            <p>
-              <span>✓</span>
-              <strong>Tu plantilla inicial ha sido confirmada</strong>
-              <small>Ahora mismo</small>
-            </p>
-            <p>
-              <span>↗</span>
-              <strong>El mercado tiene 5 jugadores disponibles</strong>
-              <small>Hace 8 min</small>
-            </p>
-            <p>
-              <span>+</span>
-              <strong>Un nuevo participante se ha unido</strong>
-              <small>Hace 21 min</small>
-            </p>
+            {leagueActivity.slice(0, 3).map((item) => (
+              <p key={item.id}>
+                <span>{item.initials}</span>
+                <strong>{item.title}</strong>
+                <small>{item.actor} · {formatNotificationTime(item.createdAt)}</small>
+              </p>
+            ))}
+            {leagueActivity.length === 0 && <p className="league-activity-empty">Todavía no hay movimientos confirmados en esta liga.</p>}
           </article>
         )}
         <article className="league-panel nearby-rivals">
@@ -5750,23 +5759,20 @@ function LeagueOverview({ league, team, squad, budget, fantasyEvent, fantasyLine
               <h2>Todos empiezan de cero</h2>
             </div>
             <button className="text-button" onClick={() => onSectionChange("clasificacion")}>
-              Ver todos
+              Ver clasificación completa
             </button>
           </div>
-          {[
-            ["RB", "Rayo Blanco", "0 pts"],
-            ["AC", "Atlético Cierzo", "0 pts"],
-            ["UV", "Unión Violeta", "0 pts"],
-          ].map((rival) => (
-            <button key={rival[1]} onClick={() => onSectionChange("clasificacion")}>
-              <span>{rival[0]}</span>
+          {nearbyRanking.map((rival) => (
+            <button key={rival.membershipId} onClick={() => onSectionChange("clasificacion")}>
+              <span>{rival.teamShortName || rival.initials}</span>
               <div>
-                <strong>{rival[1]}</strong>
-                <small>Sin partidos disputados</small>
+                <strong>{rival.teamName}</strong>
+                <small>{rival.totalPoints > 0 ? `${rival.managerName} · ${rival.position}.º` : `${rival.managerName} · sin partidos disputados`}</small>
               </div>
-              <b>{rival[2]} ›</b>
+              <b>{rival.totalPoints} pts ›</b>
             </button>
           ))}
+          {backendEnabled && nearbyRanking.length === 0 && <p className="league-activity-empty">Aún no hay otros participantes en esta liga.</p>}
         </article>
       </section>
       {activityOpen && <PrivateLeagueActivityDialog events={leagueActivity} leagueName={league.name} onClose={() => setActivityOpen(false)} />}
@@ -5967,7 +5973,7 @@ function PrivateLeagueActivityDialog({ events, leagueName, onClose }: { events: 
       <section className="team-dialog private-activity-dialog" role="dialog" aria-modal="true" aria-labelledby="private-activity-title">
         <div className="dialog-header">
           <div>
-            <p className="eyebrow">LIGA PRIVADA · REGISTRO COMPARTIDO</p>
+            <p className="eyebrow">ACTIVIDAD DE LA LIGA · REGISTRO COMPARTIDO</p>
             <h2 id="private-activity-title">Actividad de {leagueName}</h2>
             <p>Movimientos confirmados de todos los participantes.</p>
           </div>
@@ -7896,6 +7902,7 @@ function countdownLabel(milliseconds: number) {
 function LeagueMarketView({ league, players, squad, budget, rules, backendEnabled, bids, onChangeBids, ownedListings, receivedOffers, onRespondOffer, sentOffers, onChangeSentOffers, onGenerateSystemOffers, notify }: { league: LeagueSummary; players: MarketPlayer[]; squad?: InitialSquad; budget: number; rules: MarketRules; backendEnabled: boolean; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; ownedListings: { player: InitialSquadPlayer; contract: PlayerContract }[]; receivedOffers: { player: InitialSquadPlayer; offer: PlayerOffer }[]; onRespondOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; onGenerateSystemOffers: () => void; notify: (message: string) => void }) {
   const isFantasy = league.mode === "fantasy";
   const [backendMarket, setBackendMarket] = useState<NexoLeagueMarket | null>(null);
+  const [backendHistory, setBackendHistory] = useState<NexoMarketHistoryEntry[]>([]);
   const [marketLoading, setMarketLoading] = useState(false);
   const backendPlayers: MarketPlayer[] = (backendMarket?.listings ?? []).map((listing) => ({
     id: listing.playerId,
@@ -7918,8 +7925,9 @@ function LeagueMarketView({ league, players, squad, budget, rules, backendEnable
     if (!backendEnabled || isFantasy) return;
     setMarketLoading(true);
     try {
-      const market = await loadNexoLeagueMarket(league.id);
+      const [market, history] = await Promise.all([loadNexoLeagueMarket(league.id), loadNexoLeagueMarketHistory(league.id)]);
       setBackendMarket(market);
+      setBackendHistory(history);
       setRenewalAt(Date.parse(market.nextRenewalAt));
       onChangeBids(market.myBids.map((bid) => ({ playerId: bid.playerId, amount: bid.amount, placedAt: Date.parse(bid.placedAt) })));
     } catch (failure) {
@@ -7964,7 +7972,7 @@ function LeagueMarketView({ league, players, squad, budget, rules, backendEnable
     }))
     .filter((item): item is { bid: MarketBid; player: MarketPlayer } => Boolean(item.player));
   const validReceivedOffers = receivedOffers.filter(({ offer }) => offer.status === "active" && offer.expiresAt > Date.now());
-  const marketHistory: MarketHistoryEvent[] = [
+  const localMarketHistory: MarketHistoryEvent[] = [
     ...bids.map((bid) => {
       const player = players.find((item) => item.id === bid.playerId);
       return {
@@ -8011,40 +8019,10 @@ function LeagueMarketView({ league, players, squad, budget, rules, backendEnable
       status: "active" as const,
       createdAt: Date.now() - 4 * 3600000,
     })),
-    {
-      id: "history_transfer_demo",
-      type: "transfer",
-      direction: "made",
-      title: "Puja ganada",
-      detail: "Fichaje confirmado en la renovación",
-      playerName: "Mikel Oyarzabal",
-      amount: 10.8,
-      status: "completed",
-      createdAt: Date.now() - 2 * 86400000,
-    },
-    {
-      id: "history_sale_demo",
-      type: "sale",
-      direction: "received",
-      title: "Venta inmediata",
-      detail: "El juego abonó el 50% de su valor",
-      playerName: "Ander Barrenetxea",
-      amount: 3.4,
-      status: "completed",
-      createdAt: Date.now() - 5 * 86400000,
-    },
-    {
-      id: "history_clause_demo",
-      type: "clause",
-      direction: "received",
-      title: "Cláusula pagada por un rival",
-      detail: "El jugador cambió de propietario",
-      playerName: "Álex Baena",
-      amount: 15.2,
-      status: "completed",
-      createdAt: Date.now() - 8 * 86400000,
-    },
   ].sort((a, b) => b.createdAt - a.createdAt);
+  const marketHistory: MarketHistoryEvent[] = backendEnabled
+    ? backendHistory.map((entry) => ({ id: entry.id, type: entry.eventType, direction: entry.direction, title: entry.title, detail: entry.detail, playerName: entry.playerName, amount: entry.amount, status: entry.status, createdAt: Date.parse(entry.occurredAt) }))
+    : localMarketHistory;
 
   async function saveBid(player: MarketPlayer, amount: number): Promise<string | null> {
     const existing = bids.find((bid) => bid.playerId === player.id);
@@ -8427,7 +8405,7 @@ function MarketHistoryView({ events }: { events: MarketHistoryEvent[] }) {
           <div className="empty-bids compact">
             <span>◷</span>
             <h3>No hay operaciones</h3>
-            <p>Cambia los filtros para consultar otro periodo.</p>
+            <p>{events.length === 0 ? "Tu historial empezará cuando registres una puja u otra operación real en esta liga." : "Cambia los filtros para consultar otro periodo."}</p>
           </div>
         )}
       </div>

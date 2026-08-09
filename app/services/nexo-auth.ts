@@ -50,6 +50,12 @@ function requireClient() {
   return client;
 }
 
+function nexoAppRootUrl(): string | undefined {
+  if (typeof window === "undefined") return undefined;
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+  return `${window.location.origin}${basePath}/`;
+}
+
 export async function loadNexoIdentity(): Promise<NexoIdentity | null> {
   const client = getSupabaseClient();
   if (!client) return null;
@@ -99,6 +105,7 @@ export async function registerInNexo(input: NexoRegistration): Promise<{ identit
     email: input.email,
     password: input.password,
     options: {
+      emailRedirectTo: nexoAppRootUrl(),
       data: {
         username: input.username,
         display_name: input.displayName,
@@ -115,8 +122,7 @@ export async function registerInNexo(input: NexoRegistration): Promise<{ identit
 
 export async function sendNexoPasswordReset(email: string): Promise<void> {
   const client = requireClient();
-  const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-  const redirectTo = typeof window === "undefined" ? undefined : `${window.location.origin}${basePath}/`;
+  const redirectTo = nexoAppRootUrl();
   const { error } = await client.auth.resetPasswordForEmail(email, redirectTo ? { redirectTo } : undefined);
   if (error) throw new Error(error.message);
 }

@@ -540,6 +540,7 @@ export const helpRules: HelpRule[] = [
       "Las operaciones pueden filtrarse por dirección, tipo y estado, además de buscarse por jugador.",
       "Una operación confirmada no puede borrarse: si se corrige o anula, se añade un nuevo movimiento relacionado para mantener la trazabilidad.",
       "Las pujas y ofertas activas aparecen en el historial personal, pero sus importes no se comparten en la actividad pública de la liga.",
+      "El historial se carga desde la base de datos de la liga y nunca se completa con operaciones de ejemplo; si todavía no existe ninguna, se muestra vacío.",
       "La base de datos utilizará un identificador único por operación y registrará todos los cambios de estado de forma auditable.",
     ],
     updatedAt: "Agosto de 2026",
@@ -547,8 +548,8 @@ export const helpRules: HelpRule[] = [
   {
     id: "private-league-activity",
     category: "Ligas",
-    title: "Actividad de una liga privada",
-    summary: "Los participantes pueden consultar los movimientos confirmados de sus rivales desde el Resumen.",
+    title: "Actividad y clasificación de una liga",
+    summary: "Los participantes pueden consultar movimientos y posiciones reales desde el Resumen.",
     rules: [
       "La actividad compartida muestra fichajes confirmados, jugadores puestos o retirados del mercado, clausulazos, entradas y salidas de participantes y alineaciones guardadas.",
       "Nunca publica importes de pujas u ofertas que sigan activas, saldo disponible, deuda, estrategia ni contenido del once antes de su cierre.",
@@ -556,6 +557,8 @@ export const helpRules: HelpRule[] = [
       "Guardar una alineación puede generar actividad, pero sus jugadores, formación y capitán permanecen ocultos hasta el momento permitido por las reglas de la liga.",
       "Los eventos se ordenan por fecha, pueden filtrarse por tipo y muestran el club que realizó la acción.",
       "Solo cuentan operaciones confirmadas por el backend; borradores, intentos fallidos y validaciones rechazadas no se publican.",
+      "La vista Qué hacen tus rivales y la clasificación utilizan exclusivamente participantes y operaciones reales de esa liga; no se añaden clubes ficticios para rellenar huecos.",
+      "Ver todos abre la sección completa correspondiente: el registro cronológico en Actividad y todos los participantes en Clasificación.",
       "El administrador de la liga puede moderar actividad indebida, pero no modificar ni ocultar selectivamente operaciones válidas.",
     ],
     updatedAt: "Agosto de 2026",
