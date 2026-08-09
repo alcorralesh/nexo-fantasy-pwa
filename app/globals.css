@@ -14,6 +14,10 @@
   --shadow: 0 16px 40px rgba(21, 34, 24, 0.07);
 }
 
+/* El calendario completo mantiene las jornadas accesibles sin alargar la pantalla. */
+.matchday-history-view .matchday-selector { display: flex; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; scrollbar-width: thin; }
+.matchday-history-view .matchday-selector > button { flex: 0 0 clamp(128px, 18vw, 172px); scroll-snap-align: start; }
+
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body { margin: 0; background: var(--paper); color: var(--ink); font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }

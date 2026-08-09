@@ -13,6 +13,7 @@ import { createDemoAllocationGateway } from "./services/initial-squad-allocation
 import { acceptNexoLegalDocuments, completeNexoOnboarding, createNexoTeam, loadNexoIdentity, registerInNexo, sendNexoPasswordReset, signInToNexo, signOutFromNexo, type NexoIdentity, type NexoRegistration } from "./services/nexo-auth";
 import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, reserveNexoLeaguePlace } from "./services/nexo-leagues";
 import { loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, runNexoPlayerCatalogSync, updateNexoPlayer, type CatalogSyncJob, type CatalogSyncResult } from "./services/nexo-players";
+import { loadNexoCalendarSyncHistory, loadNexoMatchCalendar, runNexoCalendarSync, type CalendarSyncJob, type CalendarSyncResult, type MatchFixture } from "./services/nexo-calendar";
 import { withBasePath } from "./base-path";
 
 type Section = "inicio" | "equipo" | "tendencias" | "ligas" | "liga" | "perfil" | "ayuda" | "admin";
@@ -1482,6 +1483,12 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     Segunda: competitionPlayers.Segunda.map((player) => ({ ...player })),
     "Liga F": competitionPlayers["Liga F"].map((player) => ({ ...player })),
   }));
+  const [matchFixtures, setMatchFixtures] = useState<MatchFixture[]>([]);
+  useEffect(() => {
+    const refresh = () => void refreshBackendCalendar();
+    window.addEventListener("nexo-calendar-updated", refresh);
+    return () => window.removeEventListener("nexo-calendar-updated", refresh);
+  }, []);
   useEffect(() => {
     const catalogById = new Map(
       Object.values(adminPlayerCatalog)
@@ -1669,6 +1676,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     }
     void refreshBackendLeagues();
     void refreshBackendPlayerCatalog();
+    void refreshBackendCalendar();
   }
 
   async function refreshBackendLeagues() {
@@ -1689,6 +1697,14 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       setAdminPlayerCatalog(await loadNexoPlayerCatalog());
     } catch {
       /* El catálogo local provisional sigue disponible sin conexión. */
+    }
+  }
+
+  async function refreshBackendCalendar() {
+    try {
+      setMatchFixtures(await loadNexoMatchCalendar());
+    } catch {
+      /* Hasta la primera sincronización se muestra el estado pendiente. */
     }
   }
 
@@ -2913,6 +2929,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
               onClausePurchase={(rivalTeamId, player, clause, blind) => executeClausePurchase(selectedLeagueId, rivalTeamId, player, clause, blind)}
               scoringRules={scoringRules}
               settlementRules={settlementRules}
+              fixtures={matchFixtures}
               fantasyLineup={fantasyLineups[`${participations.find((entry) => entry.leagueId === selectedLeagueId)?.id ?? ""}:${selectedFantasyEvent?.matchdays[0] ?? CURRENT_MATCHDAY}`]}
               previousFantasyLineup={fantasyLineups[`${participations.find((entry) => entry.leagueId === selectedLeagueId)?.id ?? ""}:${(selectedFantasyEvent?.matchdays[0] ?? CURRENT_MATCHDAY) - 1}`]}
               fantasyEvent={selectedFantasyEvent}
@@ -5481,7 +5498,7 @@ function LeagueAreaNav({ section, onChange, mobile = false }: { section: LeagueA
   );
 }
 
-function LeagueDetailView({ league, team, participation, squad, section, onSectionChange, onBack, marketPlayers, marketRules, privateRules, canManagePrivateLeague, privateAdmin, privateParticipants, onManagePrivateLeague, reports, onReport, onResolveReport, onLeaveLeague, bids, onChangeBids, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, scoringRules, settlementRules, fantasyLineup, previousFantasyLineup, fantasyEvent, onSaveFantasyLineup, onAdjustBudget, onImmediateSale, notify }: { league: LeagueSummary; team: FantasyTeamSummary; participation?: LeagueParticipation; squad?: InitialSquad; section: LeagueAreaSection; onSectionChange: (section: LeagueAreaSection) => void; onBack: () => void; marketPlayers: MarketPlayer[]; marketRules: MarketRules; privateRules?: PrivateLeagueRules; canManagePrivateLeague: boolean; privateAdmin?: PrivateLeagueParticipant; privateParticipants: PrivateLeagueParticipant[]; onManagePrivateLeague: () => void; reports: LeagueReport[]; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeaveLeague: (successorId?: string) => Promise<string | null>; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; fantasyEvent?: FantasyEvent; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; notify: (message: string) => void }) {
+function LeagueDetailView({ league, team, participation, squad, section, onSectionChange, onBack, marketPlayers, marketRules, privateRules, canManagePrivateLeague, privateAdmin, privateParticipants, onManagePrivateLeague, reports, onReport, onResolveReport, onLeaveLeague, bids, onChangeBids, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, scoringRules, settlementRules, fixtures, fantasyLineup, previousFantasyLineup, fantasyEvent, onSaveFantasyLineup, onAdjustBudget, onImmediateSale, notify }: { league: LeagueSummary; team: FantasyTeamSummary; participation?: LeagueParticipation; squad?: InitialSquad; section: LeagueAreaSection; onSectionChange: (section: LeagueAreaSection) => void; onBack: () => void; marketPlayers: MarketPlayer[]; marketRules: MarketRules; privateRules?: PrivateLeagueRules; canManagePrivateLeague: boolean; privateAdmin?: PrivateLeagueParticipant; privateParticipants: PrivateLeagueParticipant[]; onManagePrivateLeague: () => void; reports: LeagueReport[]; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeaveLeague: (successorId?: string) => Promise<string | null>; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; fixtures: MatchFixture[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; fantasyEvent?: FantasyEvent; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; notify: (message: string) => void }) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const starters = squad?.players.filter((player) => squad.startingPlayerIds.includes(player.id)) ?? [];
   const ownedMarketListings = (squad?.players ?? []).flatMap((player) => {
@@ -5527,7 +5544,7 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
       {section === "resumen" && <LeagueOverview league={league} team={team} squad={squad} budget={participation?.budget ?? 100} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} privateParticipants={privateParticipants} onSectionChange={onSectionChange} notify={notify} />}
       {section === "equipo" && <LeagueSquadView squad={squad} starters={starters} league={league} marketPlayers={fantasyScopedPlayers} participationId={participation?.id ?? ""} budget={participation?.budget ?? 0} fantasyMatchdayBudget={fantasyEvent?.snapshot?.budget ?? marketRules.fantasyMatchdayBudget} fantasyOptions={marketRules} fantasyEvent={fantasyEvent} scoringRules={scoringRules} fantasyLineup={fantasyLineup} previousFantasyLineup={previousFantasyLineup} onSaveFantasyLineup={onSaveFantasyLineup} playerContracts={playerContracts} playerOffers={playerOffers} onChangePlayerContract={onChangePlayerContract} onCreatePlayerOffer={onCreatePlayerOffer} onRespondPlayerOffer={onRespondPlayerOffer} onAdjustBudget={onAdjustBudget} onImmediateSale={onImmediateSale} notify={notify} />}
       {section === "mercado" && <LeagueMarketView league={league} players={fantasyScopedPlayers} squad={squad} budget={participation?.budget ?? 100} rules={marketRules} bids={bids} onChangeBids={onChangeBids} ownedListings={ownedMarketListings} receivedOffers={receivedMarketOffers} onRespondOffer={onRespondPlayerOffer} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} onGenerateSystemOffers={() => ownedMarketListings.forEach(({ player }) => onCreatePlayerOffer(player, "game"))} notify={notify} />}
-      {section === "jornada" && <LeagueMatchdayView squad={squad} competition={league.competition} scoringRules={scoringRules} settlementRules={settlementRules} onPrepareTeam={() => onSectionChange("equipo")} notify={notify} />}
+      {section === "jornada" && <LeagueMatchdayView squad={squad} competition={league.competition} fixtures={fixtures} scoringRules={scoringRules} settlementRules={settlementRules} onPrepareTeam={() => onSectionChange("equipo")} notify={notify} />}
       {section === "clasificacion" && <LeagueRankingView team={team} competition={league.competition} budget={participation?.budget ?? 0} rules={marketRules} bidCommitment={bids.reduce((total, bid) => total + bid.amount, 0)} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={onClausePurchase} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} currentUserIsAdmin={canManagePrivateLeague} privateAdmin={privateAdmin} onReport={onReport} />}
       {optionsOpen && <LeagueOptionsDialog league={league} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} isAdmin={canManagePrivateLeague} participants={privateParticipants} reports={reports} onResolveReport={onResolveReport} onLeave={onLeaveLeague} onClose={() => setOptionsOpen(false)} />}
     </>
@@ -8520,59 +8537,22 @@ function BidDialog({ player, existingBid, committed, budget, spendingLimit, debt
   );
 }
 
-function LeagueMatchdayView({ squad, competition, scoringRules, settlementRules, onPrepareTeam, notify }: { squad?: InitialSquad; competition: CompetitionName; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; onPrepareTeam: () => void; notify: (message: string) => void }) {
-  const matchdays = [
-    {
-      number: 1,
-      status: "Programada",
-      date: "Pendiente",
-      rank: 1,
-      previousRank: 1,
-      leagueAverage: 0,
-      bestScore: 0,
-      formation: "4-4-2",
-    },
-    {
-      number: 2,
-      status: "Programada",
-      date: "Pendiente",
-      rank: 1,
-      previousRank: 1,
-      leagueAverage: 0,
-      bestScore: 0,
-      formation: "4-4-2",
-    },
-    {
-      number: 3,
-      status: "Programada",
-      date: "Pendiente",
-      rank: 1,
-      previousRank: 1,
-      leagueAverage: 0,
-      bestScore: 0,
-      formation: "4-4-2",
-    },
-    {
-      number: 4,
-      status: "Programada",
-      date: "Pendiente",
-      rank: 1,
-      previousRank: 1,
-      leagueAverage: 0,
-      bestScore: 0,
-      formation: "4-4-2",
-    },
-    {
-      number: 5,
-      status: "Programada",
-      date: "Pendiente",
-      rank: 1,
-      previousRank: 1,
-      leagueAverage: 0,
-      bestScore: 0,
-      formation: "4-4-2",
-    },
-  ];
+function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoringRules, settlementRules, onPrepareTeam, notify }: { squad?: InitialSquad; competition: CompetitionName; fixtures: MatchFixture[]; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; onPrepareTeam: () => void; notify: (message: string) => void }) {
+  const competitionFixtures = allFixtures.filter((fixture) => fixture.competition === competition);
+  const roundNumbers = competitionFixtures.length ? Array.from(new Set(competitionFixtures.map((fixture) => fixture.matchday))).sort((a, b) => a - b) : [1, 2, 3, 4, 5];
+  const matchdays = roundNumbers.map((number) => {
+    const round = competitionFixtures.filter((fixture) => fixture.matchday === number);
+    const kickoffs = round.map((fixture) => fixture.kickoffAt ? new Date(fixture.kickoffAt) : null).filter((date): date is Date => Boolean(date && !Number.isNaN(date.getTime()))).sort((a, b) => a.getTime() - b.getTime());
+    const allFinal = round.length > 0 && round.every((fixture) => fixture.status === "final");
+    const anyLive = round.some((fixture) => fixture.status === "live");
+    const anyPostponed = round.some((fixture) => fixture.status === "postponed");
+    return {
+      number,
+      status: allFinal ? "Finalizada" : anyLive ? "En juego" : anyPostponed ? "Aplazada" : "Programada",
+      date: kickoffs.length ? kickoffs[0].toLocaleDateString("es-ES", { day: "2-digit", month: "short" }) : "Pendiente",
+      rank: 1, previousRank: 1, leagueAverage: 0, bestScore: 0, formation: "4-4-2",
+    };
+  });
   const [selectedMatchday, setSelectedMatchday] = useState(CURRENT_MATCHDAY);
   const [view, setView] = useState<"points" | "calendar">("points");
   const [selectedPlayer, setSelectedPlayer] = useState<InitialSquadPlayer | null>(null);
@@ -8605,21 +8585,14 @@ function LeagueMatchdayView({ squad, competition, scoringRules, settlementRules,
   const teamTotal = finalized ? totalFor(selected.number) : 0;
   const payout = Math.min(settlementRules.maximumPayout, Math.max(settlementRules.minimumPayout, Math.max(0, teamTotal) * settlementRules.moneyPerPoint));
   const positionChange = selected.previousRank - selected.rank;
-  const clubs = Array.from(new Set(competitionPlayers[competition].map((player) => player.club)));
-  const fixtures = Array.from({ length: 0 }, (_, index) => {
-    const home = clubs[(index * 2 + selected.number) % clubs.length];
-    const away = clubs[(index * 2 + selected.number + 1) % clubs.length];
-    const id = `j${selected.number}_${index}`;
-    const myPlayers = (squad?.players ?? []).filter((player) => player.club === home || player.club === away);
-    return {
-      id,
-      home,
-      away,
-      time: ["Vie · 21:00", "Sáb · 16:15", "Sáb · 18:30", "Dom · 16:15", "Dom · 21:00"][index],
-      homeGoals: (selected.number + index) % 4,
-      awayGoals: (selected.number * 2 + index) % 3,
-      myPlayers,
-    };
+  const normalizeClub = (value = "") => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es").replace(/\b(cf|fc|sad|de futbol|futbol club|club de futbol)\b/g, "").replace(/[^a-z0-9]/g, "");
+  const fixtures = competitionFixtures.filter((fixture) => fixture.matchday === selected.number).map((fixture) => {
+    const clubKeys = new Set([normalizeClub(fixture.home), normalizeClub(fixture.away)]);
+    const myPlayers = (squad?.players ?? []).filter((player) => clubKeys.has(normalizeClub(player.club)));
+    const kickoff = fixture.kickoffAt ? new Date(fixture.kickoffAt) : null;
+    const dateLabel = kickoff && !Number.isNaN(kickoff.getTime()) ? kickoff.toLocaleDateString("es-ES", { weekday: "short", day: "2-digit", month: "short" }) : "Fecha pendiente";
+    const timeLabel = fixture.kickoffConfirmed && kickoff ? kickoff.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "hora pendiente";
+    return { ...fixture, time: `${dateLabel} · ${timeLabel}`, homeGoals: fixture.homeScore, awayGoals: fixture.awayScore, myPlayers };
   });
 
   return (
@@ -8647,8 +8620,8 @@ function LeagueMatchdayView({ squad, competition, scoringRules, settlementRules,
           <button onClick={onPrepareTeam}>Preparar equipo →</button>
         </article>
         <footer>
-          <span>◷ Calendario pendiente</span>
-          <p>Las jornadas posteriores permanecerán programadas hasta recibir fechas oficiales.</p>
+          <span>{competitionFixtures.length ? `✓ ${competitionFixtures.length} partidos sincronizados` : "◷ Calendario pendiente"}</span>
+          <p>{competitionFixtures.length ? "Consulta todas las jornadas y vuelve a sincronizar desde Administración cuando cambien los horarios." : "Las jornadas aparecerán cuando Administración realice la primera sincronización oficial."}</p>
         </footer>
       </section>
       <nav className="matchday-selector" aria-label="Seleccionar jornada">
@@ -8698,29 +8671,16 @@ function LeagueMatchdayView({ squad, competition, scoringRules, settlementRules,
               <h3>{fixtures.length} partidos</h3>
               <p>Los jugadores de tu plantilla aparecen identificados en cada encuentro.</p>
             </div>
-            <span>{finalized ? "Resultados definitivos" : selected.status === "Pendiente" ? "Partidos en curso" : "Horarios programados"}</span>
+            <span>{finalized ? "Resultados definitivos" : selected.status === "En juego" ? "Partidos en curso" : selected.status === "Aplazada" ? "Contiene aplazados" : "Horarios programados"}</span>
           </header>
-          {selected.number === 4 && (
+          {fixtures.some((fixture) => fixture.status === "postponed") && (
             <article className="schedule-exception-notice postponed">
-              <span>↻</span>
-              <div>
-                <strong>Partido aplazado de esta jornada</strong>
-                <p>Sigue vinculado a la J4. Su resultado se incorporará aquí aunque se dispute durante otra jornada.</p>
-              </div>
+              <span>↻</span><div><strong>Esta jornada contiene un partido aplazado</strong><p>Conserva su jornada original y se actualizará cuando se dispute.</p></div>
               <b>POLÍTICA: {settlementRules.postponedPolicy === "provisional" ? "CIERRE PROVISIONAL" : "ESPERAR"}</b>
             </article>
           )}
-          {selected.number === 5 && (
-            <article className="schedule-exception-notice advanced">
-              <span>⚡</span>
-              <div>
-                <strong>Un partido fue adelantado</strong>
-                <p>La J5 se bloquea con su propio once al comenzar su primer partido, aunque coincida con encuentros pendientes de la J4.</p>
-              </div>
-              <b>AVISO · {settlementRules.advanceNoticeHours} H</b>
-            </article>
-          )}
           <div className="fixture-calendar-list">
+            {!fixtures.length && <article className="matchday-pending-state"><span>◷</span><h3>Calendario pendiente de sincronización</h3><p>Administración debe importar primero los partidos oficiales de esta competición.</p></article>}
             {fixtures.map((fixture) => {
               const expanded = expandedFixture === fixture.id;
               const startersInMatch = fixture.myPlayers.filter((player) => squad?.startingPlayerIds.includes(player.id));
@@ -8743,7 +8703,7 @@ function LeagueMatchdayView({ squad, competition, scoringRules, settlementRules,
                       ) : (
                         <>
                           <b>—</b>
-                          <em>{selected.status === "Pendiente" ? "EN JUEGO" : "PRÓXIMO"}</em>
+                          <em>{fixture.status === "live" ? "EN JUEGO" : fixture.status === "postponed" ? "APLAZADO" : "PRÓXIMO"}</em>
                           <b>—</b>
                         </>
                       )}
@@ -8793,13 +8753,13 @@ function LeagueMatchdayView({ squad, competition, scoringRules, settlementRules,
               );
             })}
           </div>
-          <article className="calendar-data-note">
+          {fixtures.length > 0 && <article className="calendar-data-note">
             <span>API</span>
             <div>
               <strong>Calendario sincronizado</strong>
-              <p>Fechas, horarios, estados y resultados procederán del proveedor oficial. Cada partido conserva su jornada original aunque cambie de fecha.</p>
+              <p>Fechas, horarios, estados y resultados proceden del proveedor oficial. Cada partido conserva su jornada original aunque cambie de fecha.</p>
             </div>
-          </article>
+          </article>}
         </section>
       ) : finalized ? (
         <>
@@ -11274,6 +11234,7 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, econo
               </div>
             </article>
           </section>
+          <CalendarSyncAdminPanel enabled={catalogSyncEnabled} notify={notify} />
           <FantasyEventsAdminPanel events={fantasyEvents} onCreate={onCreateFantasyEvent} onSnapshot={onSnapshotFantasyEvent} />
           <MatchdaySettlementAdminPanel rules={settlementRules} onChange={setSettlementRules} notify={notify} />
           <OnboardingAdminPanel config={onboardingConfig} onForce={onForceOnboarding} />
@@ -11679,6 +11640,45 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, econo
       {editingPlayer && <AdminPlayerEditor player={editingPlayer} onClose={() => setEditingPlayer(null)} onSave={savePlayer} />}
     </>
   );
+}
+
+function CalendarSyncAdminPanel({ enabled, notify }: { enabled: boolean; notify: (value: string) => void }) {
+  const [preview, setPreview] = useState<CalendarSyncResult | null>(null);
+  const [history, setHistory] = useState<CalendarSyncJob[]>([]);
+  const [busy, setBusy] = useState<"preview" | "apply" | null>(null);
+  const [error, setError] = useState("");
+
+  async function refreshHistory() {
+    if (!enabled) return;
+    try { setHistory(await loadNexoCalendarSyncHistory()); } catch { /* El panel sigue siendo utilizable. */ }
+  }
+  useEffect(() => { void refreshHistory(); }, [enabled]);
+
+  async function run(mode: "preview" | "apply") {
+    setBusy(mode); setError("");
+    try {
+      const result = await runNexoCalendarSync(mode);
+      setPreview(result);
+      if (mode === "apply") {
+        window.dispatchEvent(new Event("nexo-calendar-updated"));
+        notify(`Calendario actualizado: ${result.summary.total} partidos`);
+      }
+      await refreshHistory();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se pudo sincronizar el calendario");
+    } finally { setBusy(null); }
+  }
+
+  const summary = preview?.summary;
+  return <section className="admin-panel catalog-sync-panel">
+    <header><div><p className="eyebrow">CALENDARIO OFICIAL · SINCRONIZACIÓN</p><h2>Actualizar jornadas y partidos</h2><p>Importa Primera, Segunda y Liga F desde el backend. Los cambios de horario, aplazamientos y resultados conservan siempre su jornada deportiva.</p></div><span className="catalog-source-lock">PROTEGIDO</span></header>
+    <div className="catalog-source-grid"><span><b>Primera</b><small>38 jornadas · 380 partidos</small></span><span><b>Segunda</b><small>42 jornadas · 462 partidos</small></span><span><b>Liga F</b><small>30 jornadas · 240 partidos</small></span></div>
+    {!enabled && <article className="catalog-sync-demo-note">Inicia sesión con tu cuenta administradora para consultar y guardar el calendario oficial.</article>}
+    {summary && <div className="catalog-sync-summary"><span><small>TOTAL</small><strong>{summary.total}</strong></span><span><small>CAMBIOS</small><strong>{summary.changed}</strong></span><span><small>PROGRAMADOS</small><strong>{summary.scheduled}</strong></span><span><small>EN JUEGO</small><strong>{summary.live}</strong></span><span><small>FINALIZADOS</small><strong>{summary.final}</strong></span></div>}
+    {error && <p className="form-error">{error}</p>}
+    <div className="catalog-sync-actions"><button className="secondary-button" disabled={!enabled || busy !== null} onClick={() => run("preview")}>{busy === "preview" ? "Consultando…" : "Comprobar calendario"}</button><button className="primary-button" disabled={!enabled || busy !== null || !preview} onClick={() => run("apply")}>{busy === "apply" ? "Guardando…" : "Aplicar calendario"}</button></div>
+    {history.length > 0 && <small>Última sincronización: {new Date(history[0].started_at).toLocaleString("es-ES")}</small>}
+  </section>;
 }
 
 function CatalogSyncAdminPanel({ enabled, onApplied, notify }: { enabled: boolean; onApplied: () => Promise<void>; notify: (value: string) => void }) {
