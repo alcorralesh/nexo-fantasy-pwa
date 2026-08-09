@@ -1,4 +1,4 @@
-import type { CompetitionName, LeagueParticipation, LeagueSummary, PublicLeagueSummary } from "../data";
+import type { CompetitionName, InitialSquad, LeagueParticipation, LeagueSummary, PublicLeagueSummary } from "../data";
 import { getSupabaseClient } from "../lib/supabase-client";
 
 type DirectoryRow = {
@@ -113,6 +113,30 @@ export async function confirmNexoLeagueJoin(reservationId: string, teamId: strin
   return data as string;
 }
 
+export async function confirmNexoMarketLeagueJoin(input: { reservationId: string; teamId: string; idempotencyKey: string; squadSize?: number }): Promise<{ membershipId: string; squad: InitialSquad }> {
+  const client = requireClient();
+  const { data, error } = await client.rpc("confirm_market_league_join", {
+    reservation_id: input.reservationId,
+    selected_team_id: input.teamId,
+    request_key: input.idempotencyKey,
+    requested_squad_size: input.squadSize ?? 16,
+  });
+  if (error) throw new Error(error.message);
+  return { membershipId: data.membershipId, squad: data.squad as InitialSquad };
+}
+
+export async function allocateNexoMarketRoster(input: { membershipId: string; targetValue: number; squadSize: number; idempotencyKey: string }): Promise<InitialSquad> {
+  const client = requireClient();
+  const { data, error } = await client.rpc("allocate_my_market_roster", {
+    membership_id: input.membershipId,
+    requested_target_value: input.targetValue,
+    requested_squad_size: input.squadSize,
+    request_key: input.idempotencyKey,
+  });
+  if (error) throw new Error(error.message);
+  return data.squad as InitialSquad;
+}
+
 export async function cancelNexoLeagueReservation(reservationId: string): Promise<void> {
   const client = requireClient();
   await client.rpc("cancel_league_reservation", { reservation_id: reservationId });
@@ -125,7 +149,7 @@ export async function previewNexoPrivateLeague(accessCode: string): Promise<Dire
   return ((data ?? [])[0] as DirectoryRow | undefined) ?? null;
 }
 
-export async function createNexoPrivateLeague(input: { name: string; teamId: string; capacity: number; rules: Record<string, unknown> }): Promise<{ leagueId: string; membershipId: string; accessCode: string }> {
+export async function createNexoPrivateLeague(input: { name: string; teamId: string; capacity: number; rules: Record<string, unknown> }): Promise<{ leagueId: string; membershipId: string; accessCode: string; squad: InitialSquad }> {
   const client = requireClient();
   const { data, error } = await client.rpc("create_private_league", {
     league_name: input.name,
@@ -134,7 +158,7 @@ export async function createNexoPrivateLeague(input: { name: string; teamId: str
     requested_rules: input.rules,
   });
   if (error) throw new Error(error.message);
-  return { leagueId: data.leagueId, membershipId: data.membershipId, accessCode: data.accessCode };
+  return { leagueId: data.leagueId, membershipId: data.membershipId, accessCode: data.accessCode, squad: data.squad as InitialSquad };
 }
 
 export async function leaveNexoLeague(leagueId: string, successorMembershipId?: string): Promise<void> {
@@ -142,4 +166,3 @@ export async function leaveNexoLeague(leagueId: string, successorMembershipId?: 
   const { error } = await client.rpc("leave_my_league", { target_league_id: leagueId, successor_membership_id: successorMembershipId ?? null });
   if (error) throw new Error(error.message);
 }
-

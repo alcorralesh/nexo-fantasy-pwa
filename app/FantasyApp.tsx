@@ -25,7 +25,8 @@ import { defaultMarketValueConfig, type MarketValueConfig } from "./domain/marke
 import { calculatePlayerPoints, defaultScoringRules, demoPlayerMatchStats, type ScoringRule } from "./domain/scoring";
 import { createDemoAllocationGateway } from "./services/initial-squad-allocation";
 import { acceptNexoLegalDocuments, completeNexoOnboarding, createNexoTeam, loadNexoIdentity, registerInNexo, sendNexoPasswordReset, signInToNexo, signOutFromNexo, type NexoIdentity, type NexoRegistration } from "./services/nexo-auth";
-import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, reserveNexoLeaguePlace } from "./services/nexo-leagues";
+import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, reserveNexoLeaguePlace } from "./services/nexo-leagues";
+import { loadNexoPlayerCatalog, updateNexoPlayer } from "./services/nexo-players";
 import { withBasePath } from "./base-path";
 
 type Section = "inicio" | "equipo" | "tendencias" | "ligas" | "liga" | "perfil" | "ayuda" | "admin";
@@ -431,6 +432,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     }
     try { window.localStorage.setItem("nexo_onboarding_seen_version", String(identity.onboardingVersion)); } catch { /* Preferencia local opcional. */ }
     void refreshBackendLeagues();
+    void refreshBackendPlayerCatalog();
   }
 
   async function refreshBackendLeagues() {
@@ -441,6 +443,11 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       setParticipations(state.participations);
       setPrivateLeagueAdminIds(state.adminLeagueIds);
     } catch { /* La pantalla puede seguir usando los datos de demostración si la red falla. */ }
+  }
+
+  async function refreshBackendPlayerCatalog() {
+    try { setAdminPlayerCatalog(await loadNexoPlayerCatalog()); }
+    catch { /* El catálogo local provisional sigue disponible sin conexión. */ }
   }
 
   async function loginWithBackend(email: string, password: string) {
@@ -732,12 +739,14 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     let leagueId = `private_local_${crypto.randomUUID()}`;
     let participationId = `entry_local_${crypto.randomUUID()}`;
     let accessCode = "";
+    let allocatedInitialSquad = createLocalSquad(input.competition, input.rules.initialSquadSize);
     if (sessionUser?.id !== "demo_user") {
       try {
         const created = await createNexoPrivateLeague({ name, teamId: selectedTeam.id, capacity: input.rules.capacity, rules: input.rules });
         leagueId = created.leagueId;
         participationId = created.membershipId;
         accessCode = created.accessCode;
+        allocatedInitialSquad = created.squad;
       } catch (failure) { return { error: failure instanceof Error ? failure.message : "No se ha podido crear la liga." }; }
     } else {
       do { accessCode = `NX-${Math.random().toString(36).slice(2, 6).toUpperCase()}`; } while (Object.values(privateLeagueRules).some((rules) => rules.accessCode === accessCode));
@@ -747,7 +756,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     const participation: LeagueParticipation = { id: participationId, leagueId, teamId: selectedTeam.id, rosterId: `roster_local_${crypto.randomUUID()}`, budget: rules.startingBudget };
     setLeagues((current) => [...current, league]);
     setParticipations((current) => [...current, participation]);
-    setInitialSquads((current) => ({ ...current, [participationId]: createLocalSquad(input.competition, rules.initialSquadSize) }));
+    setInitialSquads((current) => ({ ...current, [participationId]: allocatedInitialSquad }));
     setPrivateLeagueRules((current) => ({ ...current, [leagueId]: rules }));
     setPrivateLeagueAdminIds((current) => [...current, leagueId]);
     setPrivateLeagueInvites((current) => [...current, { league, rules, participants: [{ id: participationId, initials: sessionUser?.initials ?? initialData.user.initials, userName: sessionUser?.displayName ?? initialData.user.displayName, teamName: selectedTeam.name, role: "admin" }], activeReservations: 0 }]);
@@ -809,23 +818,22 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       catch (failure) { return failure instanceof Error ? failure.message : "No se ha podido reservar la plaza."; }
     }
     setPrivateLeagueInvites((current) => current.map((item) => item.league.id === invite.league.id ? { ...item, activeReservations: item.activeReservations + 1 } : item));
-    const assignedIds = new Set(participations.filter((item) => item.leagueId === invite.league.id).flatMap((item) => initialSquads[item.id]?.players.map((player) => player.id) ?? []));
     let allocatedSquad: InitialSquad;
+    let backendMembershipId: string | null = null;
     try {
-      allocatedSquad = (await createDemoAllocationGateway(assignedIds).allocate({ leagueId: invite.league.id, teamId: selectedTeam.id, competition: invite.league.competition, targetValue: createLocalSquad(invite.league.competition, invite.rules.initialSquadSize).totalValue, squadSize: invite.rules.initialSquadSize, idempotencyKey: crypto.randomUUID() })).squad;
-    } catch {
+      if (backendReservationId) {
+        const confirmed = await confirmNexoMarketLeagueJoin({ reservationId: backendReservationId, teamId: selectedTeam.id, idempotencyKey: crypto.randomUUID(), squadSize: invite.rules.initialSquadSize });
+        backendMembershipId = confirmed.membershipId;
+        allocatedSquad = confirmed.squad;
+        backendReservationId = null;
+      } else {
+        const assignedIds = new Set(participations.filter((item) => item.leagueId === invite.league.id).flatMap((item) => initialSquads[item.id]?.players.map((player) => player.id) ?? []));
+        allocatedSquad = (await createDemoAllocationGateway(assignedIds).allocate({ leagueId: invite.league.id, teamId: selectedTeam.id, competition: invite.league.competition, targetValue: createLocalSquad(invite.league.competition, invite.rules.initialSquadSize).totalValue, squadSize: invite.rules.initialSquadSize, idempotencyKey: crypto.randomUUID() })).squad;
+      }
+    } catch (failure) {
       if (backendReservationId) await cancelNexoLeagueReservation(backendReservationId);
       setPrivateLeagueInvites((current) => current.map((item) => item.league.id === invite.league.id ? { ...item, activeReservations: Math.max(0, item.activeReservations - 1) } : item));
-      return "No quedan suficientes jugadores exclusivos para entregar una plantilla válida. La plaza reservada se ha liberado.";
-    }
-    let backendMembershipId: string | null = null;
-    if (backendReservationId) {
-      try { backendMembershipId = await confirmNexoLeagueJoin(backendReservationId, selectedTeam.id); }
-      catch (failure) {
-        await cancelNexoLeagueReservation(backendReservationId);
-        setPrivateLeagueInvites((current) => current.map((item) => item.league.id === invite.league.id ? { ...item, activeReservations: Math.max(0, item.activeReservations - 1) } : item));
-        return failure instanceof Error ? failure.message : "La plaza reservada ya no está disponible.";
-      }
+      return failure instanceof Error ? failure.message : "No quedan suficientes jugadores exclusivos para entregar una plantilla válida. La plaza reservada se ha liberado.";
     }
     const participation: LeagueParticipation = { id: backendMembershipId ?? `entry_local_${crypto.randomUUID()}`, leagueId: invite.league.id, teamId: selectedTeam.id, rosterId: `roster_local_${crypto.randomUUID()}`, budget: invite.rules.startingBudget };
     const nextParticipants: PrivateLeagueParticipant[] = [...invite.participants, { id: initialData.user.id, initials: initialData.user.initials, userName: initialData.user.displayName, teamName: selectedTeam.name, role: "member" }];
@@ -919,19 +927,25 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     }
 
     let allocatedSquad: InitialSquad = { formation: "4-4-2", players: [], startingPlayerIds: [], benchPlayerIds: [], totalValue: 0, targetValue: 0 };
+    let persistentMembershipId: string | null = null;
     if (publicLeague.mode === "market") {
-      const sameLeagueParticipationIds = participations.filter((item) => item.leagueId === leagueId).map((item) => item.id);
-      const assignedPlayerIds = new Set(sameLeagueParticipationIds.flatMap((participationId) => initialSquads[participationId]?.players.map((player) => player.id) ?? []));
       try {
-        const confirmedAllocation = await createDemoAllocationGateway(assignedPlayerIds).allocate({ leagueId, teamId: selectedTeamId, competition: publicLeague.competition, targetValue: publicLeague.targetSquadValue, idempotencyKey: crypto.randomUUID() });
-        allocatedSquad = confirmedAllocation.squad;
-      } catch {
+        if (reservationId) {
+          const confirmed = await confirmNexoMarketLeagueJoin({ reservationId, teamId: selectedTeamId, idempotencyKey: crypto.randomUUID(), squadSize: 16 });
+          persistentMembershipId = confirmed.membershipId;
+          allocatedSquad = confirmed.squad;
+          reservationId = null;
+        } else {
+          const sameLeagueParticipationIds = participations.filter((item) => item.leagueId === leagueId).map((item) => item.id);
+          const assignedPlayerIds = new Set(sameLeagueParticipationIds.flatMap((participationId) => initialSquads[participationId]?.players.map((player) => player.id) ?? []));
+          allocatedSquad = (await createDemoAllocationGateway(assignedPlayerIds).allocate({ leagueId, teamId: selectedTeamId, competition: publicLeague.competition, targetValue: publicLeague.targetSquadValue, idempotencyKey: crypto.randomUUID() })).squad;
+        }
+      } catch (failure) {
         if (reservationId) await cancelNexoLeagueReservation(reservationId);
-        return "No quedan suficientes jugadores para formar una plantilla equilibrada.";
+        return failure instanceof Error ? failure.message : "No quedan suficientes jugadores para formar una plantilla equilibrada.";
       }
     }
 
-    let persistentMembershipId: string | null = null;
     if (reservationId) {
       try { persistentMembershipId = await confirmNexoLeagueJoin(reservationId, selectedTeamId); }
       catch (failure) {
@@ -1052,7 +1066,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
               section={leagueAreaSection}
               onSectionChange={setLeagueAreaSection}
               onBack={() => navigate("ligas")}
-              marketPlayers={competitionPlayers[leagues.find((item) => item.id === selectedLeagueId)!.competition].map((player, index) => ({ id: player.id, initials: player.initials, name: player.name, clubId: player.club.toLowerCase().replace(/[^a-z0-9]+/g, "_"), club: player.club, position: player.position, points: 0, price: player.value, trend: index % 2 ? "+0,1 M" : "Sin cambios" }))}
+              marketPlayers={adminPlayerCatalog[leagues.find((item) => item.id === selectedLeagueId)!.competition].map((player, index) => ({ id: player.id, initials: player.initials, name: player.name, clubId: player.club.toLowerCase().replace(/[^a-z0-9]+/g, "_"), club: player.club, position: player.position, points: 0, price: player.value, trend: index % 2 ? "+0,1 M" : "Sin cambios" }))}
               marketRules={effectiveMarketRules}
               privateRules={selectedPrivateRules}
               canManagePrivateLeague={privateLeagueAdminIds.includes(selectedLeagueId)}
@@ -1087,7 +1101,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
           )}
           {active === "perfil" && <ProfileView user={displayUser} coins={coins} teams={teams} activeTeamId={teamId} onCreateTeam={() => setTeamCreatorOpen(true)} onLogout={logout} navigate={navigate} notify={notify} isAdmin={sessionUser.role === "admin"} preferences={preferences} onSavePreferences={(next) => { setPreferences(next); setCompetition(next.defaultCompetition); notify("Preferencias guardadas"); }} achievements={achievementCatalog} claimedAchievements={claimedAchievements} onClaimAchievement={claimAchievement} actions={coinActions} claimedActions={claimedCoinActions} onClaimAction={claimCoinAction} ledger={coinLedger} economyRules={economyRules} />}
           {active === "ayuda" && <HelpView />}
-          {active === "admin" && sessionUser.role === "admin" && <AdminView marketRules={marketRules} setMarketRules={setMarketRules} clubRules={clubRules} setClubRules={setClubRules} economyRules={economyRules} setEconomyRules={setEconomyRules} settlementRules={settlementRules} setSettlementRules={setSettlementRules} onboardingConfig={onboardingConfig} onForceOnboarding={forceOnboarding} legalConfig={legalConfig} onPublishLegalVersion={publishLegalVersion} scoringRules={scoringRules} onChangeScoringRules={setScoringRules} teams={teams} leagues={leagues} participations={participations} squads={initialSquads} bids={leagueBids} playerContracts={playerContracts} playerOffers={playerOffers} sentOffers={sentOffers} playerCatalog={adminPlayerCatalog} onChangePlayerCatalog={setAdminPlayerCatalog} fantasyEvents={fantasyEvents} onCreateFantasyEvent={createFantasyEvent} onSnapshotFantasyEvent={snapshotFantasyEvent} onOpenLeague={openLeague} onRenewMarket={renewLeagueMarketAsAdmin} notify={notify} />}
+          {active === "admin" && sessionUser.role === "admin" && <AdminView marketRules={marketRules} setMarketRules={setMarketRules} clubRules={clubRules} setClubRules={setClubRules} economyRules={economyRules} setEconomyRules={setEconomyRules} settlementRules={settlementRules} setSettlementRules={setSettlementRules} onboardingConfig={onboardingConfig} onForceOnboarding={forceOnboarding} legalConfig={legalConfig} onPublishLegalVersion={publishLegalVersion} scoringRules={scoringRules} onChangeScoringRules={setScoringRules} teams={teams} leagues={leagues} participations={participations} squads={initialSquads} bids={leagueBids} playerContracts={playerContracts} playerOffers={playerOffers} sentOffers={sentOffers} playerCatalog={adminPlayerCatalog} onSavePlayer={async (player) => { if (sessionUser.id !== "demo_user") await updateNexoPlayer(player); setAdminPlayerCatalog((current) => ({ ...current, [player.competition]: current[player.competition].map((item) => item.id === player.id ? player : item) })); }} fantasyEvents={fantasyEvents} onCreateFantasyEvent={createFantasyEvent} onSnapshotFantasyEvent={snapshotFantasyEvent} onOpenLeague={openLeague} onRenewMarket={renewLeagueMarketAsAdmin} notify={notify} />}
         </main>
 
         {active === "liga" ? <LeagueAreaNav section={leagueAreaSection} onChange={setLeagueAreaSection} mobile /> : <nav className="bottom-nav" aria-label="Navegación móvil">{navItems.map((item) => <button key={item.id} className={active === item.id ? "active" : ""} onClick={() => navigate(item.id)}><span>{item.icon}</span><small>{item.label}</small></button>)}</nav>}
@@ -2959,7 +2973,7 @@ function CreateFantasyEventDialog({ onClose, onCreate }: { onClose: () => void; 
   </form></section></div>;
 }
 
-function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, economyRules, setEconomyRules, settlementRules, setSettlementRules, onboardingConfig, onForceOnboarding, legalConfig, onPublishLegalVersion, scoringRules, onChangeScoringRules, teams, leagues, participations, squads, bids, playerContracts, playerOffers, sentOffers, playerCatalog, onChangePlayerCatalog, fantasyEvents, onCreateFantasyEvent, onSnapshotFantasyEvent, onOpenLeague, onRenewMarket, notify }: {
+function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, economyRules, setEconomyRules, settlementRules, setSettlementRules, onboardingConfig, onForceOnboarding, legalConfig, onPublishLegalVersion, scoringRules, onChangeScoringRules, teams, leagues, participations, squads, bids, playerContracts, playerOffers, sentOffers, playerCatalog, onSavePlayer, fantasyEvents, onCreateFantasyEvent, onSnapshotFantasyEvent, onOpenLeague, onRenewMarket, notify }: {
   marketRules: MarketRules;
   setMarketRules: (rules: MarketRules) => void;
   clubRules: ClubRules;
@@ -2983,7 +2997,7 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, econo
   playerOffers: Record<string, PlayerOffer[]>;
   sentOffers: Record<string, SentOffer[]>;
   playerCatalog: Record<CompetitionName, CompetitionPlayer[]>;
-  onChangePlayerCatalog: (catalog: Record<CompetitionName, CompetitionPlayer[]>) => void;
+  onSavePlayer: (player: CompetitionPlayer) => Promise<void>;
   fantasyEvents: FantasyEvent[];
   onCreateFantasyEvent: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => void;
   onSnapshotFantasyEvent: (eventId: string) => void;
@@ -3012,10 +3026,12 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, econo
   const selectedListedPlayers = selectedParticipationIds.flatMap((participationId) => (squads[participationId]?.players ?? []).filter((player) => playerContracts[`${participationId}:${player.id}`]?.listed));
   const visiblePlayers = playerCatalog[playerCompetition].filter((player) => `${player.name} ${player.club}`.toLocaleLowerCase("es").includes(playerQuery.toLocaleLowerCase("es")));
 
-  function savePlayer(nextPlayer: CompetitionPlayer) {
-    onChangePlayerCatalog({ ...playerCatalog, [playerCompetition]: playerCatalog[playerCompetition].map((player) => player.id === nextPlayer.id ? nextPlayer : player) });
-    setEditingPlayer(null);
-    notify(`Ficha de ${nextPlayer.name} actualizada`);
+  async function savePlayer(nextPlayer: CompetitionPlayer) {
+    try {
+      await onSavePlayer(nextPlayer);
+      setEditingPlayer(null);
+      notify(`Ficha de ${nextPlayer.name} actualizada`);
+    } catch { notify("No se ha podido guardar la ficha del jugador"); }
   }
 
   return <>
