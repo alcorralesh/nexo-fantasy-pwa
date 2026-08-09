@@ -6,7 +6,6 @@ import type { CompetitionName, CompetitionSummary, FantasyBootstrapData, Fantasy
 import { helpRules } from "./data/help-rules";
 import { competitionCatalogSummary, competitionPlayers, type CompetitionPlayer } from "./data/competition-players";
 import { getCompetitionTrends, type PlayerTrend } from "./data/market-trends";
-import { getNextFixture } from "./data/next-fixtures";
 import { defaultMarketValueConfig, type MarketValueConfig } from "./domain/market-value";
 import { calculatePlayerPoints, defaultScoringRules, demoPlayerMatchStats, type ScoringRule } from "./domain/scoring";
 import { createDemoAllocationGateway } from "./services/initial-squad-allocation";
@@ -5542,7 +5541,7 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
       <LeagueAreaNav section={section} onChange={onSectionChange} />
 
       {section === "resumen" && <LeagueOverview league={league} team={team} squad={squad} budget={participation?.budget ?? 100} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} privateParticipants={privateParticipants} onSectionChange={onSectionChange} notify={notify} />}
-      {section === "equipo" && <LeagueSquadView squad={squad} starters={starters} league={league} marketPlayers={fantasyScopedPlayers} participationId={participation?.id ?? ""} budget={participation?.budget ?? 0} fantasyMatchdayBudget={fantasyEvent?.snapshot?.budget ?? marketRules.fantasyMatchdayBudget} fantasyOptions={marketRules} fantasyEvent={fantasyEvent} scoringRules={scoringRules} fantasyLineup={fantasyLineup} previousFantasyLineup={previousFantasyLineup} onSaveFantasyLineup={onSaveFantasyLineup} playerContracts={playerContracts} playerOffers={playerOffers} onChangePlayerContract={onChangePlayerContract} onCreatePlayerOffer={onCreatePlayerOffer} onRespondPlayerOffer={onRespondPlayerOffer} onAdjustBudget={onAdjustBudget} onImmediateSale={onImmediateSale} notify={notify} />}
+      {section === "equipo" && <LeagueSquadView squad={squad} starters={starters} league={league} marketPlayers={fantasyScopedPlayers} fixtures={fixtures} participationId={participation?.id ?? ""} budget={participation?.budget ?? 0} fantasyMatchdayBudget={fantasyEvent?.snapshot?.budget ?? marketRules.fantasyMatchdayBudget} fantasyOptions={marketRules} fantasyEvent={fantasyEvent} scoringRules={scoringRules} fantasyLineup={fantasyLineup} previousFantasyLineup={previousFantasyLineup} onSaveFantasyLineup={onSaveFantasyLineup} playerContracts={playerContracts} playerOffers={playerOffers} onChangePlayerContract={onChangePlayerContract} onCreatePlayerOffer={onCreatePlayerOffer} onRespondPlayerOffer={onRespondPlayerOffer} onAdjustBudget={onAdjustBudget} onImmediateSale={onImmediateSale} notify={notify} />}
       {section === "mercado" && <LeagueMarketView league={league} players={fantasyScopedPlayers} squad={squad} budget={participation?.budget ?? 100} rules={marketRules} bids={bids} onChangeBids={onChangeBids} ownedListings={ownedMarketListings} receivedOffers={receivedMarketOffers} onRespondOffer={onRespondPlayerOffer} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} onGenerateSystemOffers={() => ownedMarketListings.forEach(({ player }) => onCreatePlayerOffer(player, "game"))} notify={notify} />}
       {section === "jornada" && <LeagueMatchdayView squad={squad} competition={league.competition} fixtures={fixtures} scoringRules={scoringRules} settlementRules={settlementRules} onPrepareTeam={() => onSectionChange("equipo")} notify={notify} />}
       {section === "clasificacion" && <LeagueRankingView team={team} competition={league.competition} budget={participation?.budget ?? 0} rules={marketRules} bidCommitment={bids.reduce((total, bid) => total + bid.amount, 0)} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={onClausePurchase} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} currentUserIsAdmin={canManagePrivateLeague} privateAdmin={privateAdmin} onReport={onReport} />}
@@ -5872,7 +5871,7 @@ function PrivateLeagueActivityDialog({ events, leagueName, onClose }: { events: 
   );
 }
 
-function LeagueSquadView({ squad, starters, league, marketPlayers, participationId, budget, fantasyMatchdayBudget, fantasyOptions, fantasyEvent, scoringRules, fantasyLineup, previousFantasyLineup, onSaveFantasyLineup, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, onAdjustBudget, onImmediateSale, notify }: { squad?: InitialSquad; starters: InitialSquadPlayer[]; league: LeagueSummary; marketPlayers: MarketPlayer[]; participationId: string; budget: number; fantasyMatchdayBudget: number; fantasyOptions: MarketRules; fantasyEvent?: FantasyEvent; scoringRules: ScoringRule[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; notify: (message: string) => void }) {
+function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, participationId, budget, fantasyMatchdayBudget, fantasyOptions, fantasyEvent, scoringRules, fantasyLineup, previousFantasyLineup, onSaveFantasyLineup, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, onAdjustBudget, onImmediateSale, notify }: { squad?: InitialSquad; starters: InitialSquadPlayer[]; league: LeagueSummary; marketPlayers: MarketPlayer[]; fixtures: MatchFixture[]; participationId: string; budget: number; fantasyMatchdayBudget: number; fantasyOptions: MarketRules; fantasyEvent?: FantasyEvent; scoringRules: ScoringRule[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; notify: (message: string) => void }) {
   const formations: Record<string, Record<PlayerPosition, number>> = {
     "4-4-2": { POR: 1, DEF: 4, MED: 4, DEL: 2 },
     "4-3-3": { POR: 1, DEF: 4, MED: 3, DEL: 3 },
@@ -5904,7 +5903,7 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, participation
       <>
         {fantasyEvent?.snapshot && <FantasySnapshotBanner event={fantasyEvent} />}
         <FantasyQuickTools options={fantasyOptions} matchday={selectedTeamMatchday} hasPreviousLineup={Boolean(previousFantasyLineup)} onCommand={(type, respectBudget) => setFantasyCommand({ id: crypto.randomUUID(), type, respectBudget })} />
-        <FantasyMatchdayBuilder competition={league.competition} players={marketPlayers} previousLineup={previousFantasyLineup} matchday={selectedTeamMatchday} matchdayBudget={fantasyMatchdayBudget} scoringRules={scoringRules} savedLineup={fantasyLineup} command={fantasyCommand} onSave={onSaveFantasyLineup} onSelectMatchday={setSelectedTeamMatchday} notify={notify} />
+        <FantasyMatchdayBuilder competition={league.competition} players={marketPlayers} fixtures={fixtures} previousLineup={previousFantasyLineup} matchday={selectedTeamMatchday} matchdayBudget={fantasyMatchdayBudget} scoringRules={scoringRules} savedLineup={fantasyLineup} command={fantasyCommand} onSave={onSaveFantasyLineup} onSelectMatchday={setSelectedTeamMatchday} notify={notify} />
       </>
     );
 
@@ -6085,6 +6084,7 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, participation
         <PlayerDetailSheet
           player={detailPlayer}
           competition={league.competition}
+          fixtures={fixtures}
           captain={captainId === detailPlayer.id}
           scoringRules={scoringRules}
           bench={currentBench}
@@ -6315,7 +6315,7 @@ function FantasyQuickTools({ options, matchday, hasPreviousLineup, onCommand }: 
   );
 }
 
-function FantasyMatchdayBuilder({ competition, players, previousLineup, matchday, matchdayBudget, scoringRules, savedLineup, command, onSave, onSelectMatchday, notify }: { competition: CompetitionName; players: MarketPlayer[]; previousLineup?: FantasyLineupDraft; matchday: number; matchdayBudget: number; scoringRules: ScoringRule[]; savedLineup?: FantasyLineupDraft; command: FantasyBuilderCommand | null; onSave: (lineup: FantasyLineupDraft) => void; onSelectMatchday: (matchday: number) => void; notify: (message: string) => void }) {
+function FantasyMatchdayBuilder({ competition, players, fixtures, previousLineup, matchday, matchdayBudget, scoringRules, savedLineup, command, onSave, onSelectMatchday, notify }: { competition: CompetitionName; players: MarketPlayer[]; fixtures: MatchFixture[]; previousLineup?: FantasyLineupDraft; matchday: number; matchdayBudget: number; scoringRules: ScoringRule[]; savedLineup?: FantasyLineupDraft; command: FantasyBuilderCommand | null; onSave: (lineup: FantasyLineupDraft) => void; onSelectMatchday: (matchday: number) => void; notify: (message: string) => void }) {
   const formations: Record<string, Record<PlayerPosition, number>> = {
     "4-4-2": { POR: 1, DEF: 4, MED: 4, DEL: 2 },
     "4-3-3": { POR: 1, DEF: 4, MED: 3, DEL: 3 },
@@ -6669,6 +6669,7 @@ function FantasyMatchdayBuilder({ competition, players, previousLineup, matchday
             photoUrl: detailPlayer.photoUrl,
           }}
           competition={competition}
+          fixtures={fixtures}
           captain={captainId === detailPlayer.id}
           matchday={matchday}
           scoringRules={scoringRules}
@@ -7240,10 +7241,39 @@ function BenchPlayerManagementSheet({ player, competition, exclusiveMarket, budg
   );
 }
 
-function PlayerDetailSheet({ player, competition, captain = false, matchday = 1, scoringRules, bench = [], marketPlayers = [], readOnly = false, onClose, onSwap, onCaptain, onRemove, notify = () => {} }: { player: InitialSquadPlayer; competition: CompetitionName; captain?: boolean; matchday?: number; scoringRules: ScoringRule[]; bench?: InitialSquadPlayer[]; marketPlayers?: MarketPlayer[]; readOnly?: boolean; onClose: () => void; onSwap?: (incomingId: string) => void; onCaptain?: () => void; onRemove?: () => void; notify?: (message: string) => void }) {
+function normalizeFixtureClub(value = "") {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es")
+    .replace(/\b(cf|fc|sad|de futbol|futbol club|club de futbol)\b/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function fixtureClubMatches(playerClub: string, fixtureClub: string) {
+  const playerKey = normalizeFixtureClub(playerClub);
+  const fixtureKey = normalizeFixtureClub(fixtureClub);
+  return playerKey === fixtureKey || (playerKey.length >= 5 && fixtureKey.length >= 5 && (playerKey.includes(fixtureKey) || fixtureKey.includes(playerKey)));
+}
+
+function getPlayerNextFixture(fixtures: MatchFixture[], competition: CompetitionName, club: string, fromMatchday: number) {
+  const match = fixtures
+    .filter((fixture) => fixture.competition === competition && fixture.matchday >= fromMatchday && fixture.status !== "final" && fixture.status !== "cancelled")
+    .filter((fixture) => fixtureClubMatches(club, fixture.home) || fixtureClubMatches(club, fixture.homeShortName) || fixtureClubMatches(club, fixture.away) || fixtureClubMatches(club, fixture.awayShortName))
+    .sort((a, b) => a.matchday - b.matchday || new Date(a.kickoffAt ?? "9999-12-31").getTime() - new Date(b.kickoffAt ?? "9999-12-31").getTime())[0];
+  if (!match) return undefined;
+  const home = fixtureClubMatches(club, match.home) || fixtureClubMatches(club, match.homeShortName);
+  const kickoff = match.kickoffAt ? new Date(match.kickoffAt) : null;
+  const dateLabel = kickoff && !Number.isNaN(kickoff.getTime())
+    ? `${kickoff.toLocaleDateString("es-ES", { weekday: "short", day: "2-digit", month: "short" })}${match.kickoffConfirmed ? ` · ${kickoff.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}` : " · hora pendiente"}`
+    : "Fecha y hora pendientes";
+  return { matchday: match.matchday, venue: home ? "Casa" as const : "Visitante" as const, opponent: home ? match.away : match.home, dateLabel };
+}
+
+function PlayerDetailSheet({ player, competition, fixtures = [], captain = false, matchday = 1, scoringRules, bench = [], marketPlayers = [], readOnly = false, onClose, onSwap, onCaptain, onRemove, notify = () => {} }: { player: InitialSquadPlayer; competition: CompetitionName; fixtures?: MatchFixture[]; captain?: boolean; matchday?: number; scoringRules: ScoringRule[]; bench?: InitialSquadPlayer[]; marketPlayers?: MarketPlayer[]; readOnly?: boolean; onClose: () => void; onSwap?: (incomingId: string) => void; onCaptain?: () => void; onRemove?: () => void; notify?: (message: string) => void }) {
   const [tab, setTab] = useState<"summary" | "points">(readOnly ? "points" : "summary");
   const [recommendationOpen, setRecommendationOpen] = useState(false);
-  const fixture = getNextFixture(competition, player.club);
+  const fixture = getPlayerNextFixture(fixtures, competition, player.club, matchday);
   const trend = getCompetitionTrends(competition).find((item) => item.id === player.id);
   const stats = playerDemoStats(player.id);
   const matchCompleted = COMPLETED_MATCHDAYS.has(matchday);
@@ -7390,7 +7420,7 @@ function PlayerDetailSheet({ player, competition, captain = false, matchday = 1,
                     <span>{fixture.venue === "Casa" ? "⌂" : "↗"}</span>
                     <div>
                       <small>JORNADA {fixture.matchday}</small>
-                      <strong>Juega como {fixture.venue.toLowerCase()}</strong>
+                      <strong>{fixture.venue === "Casa" ? "Juega en casa" : "Juega como visitante"}</strong>
                     </div>
                   </div>
                   <div className="fixture-opponent">
@@ -8911,7 +8941,7 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
         </section>
       )}
 
-      {selectedPlayer && <PlayerDetailSheet player={selectedPlayer} competition={competition} captain={captain?.id === selectedPlayer.id} matchday={selected.number} scoringRules={scoringRules} readOnly onClose={() => setSelectedPlayer(null)} notify={notify} />}
+      {selectedPlayer && <PlayerDetailSheet player={selectedPlayer} competition={competition} fixtures={allFixtures} captain={captain?.id === selectedPlayer.id} matchday={selected.number} scoringRules={scoringRules} readOnly onClose={() => setSelectedPlayer(null)} notify={notify} />}
     </section>
   );
 }
