@@ -2932,10 +2932,10 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
         </header>
 
         <main className="content">
-          {active === "inicio" && <Dashboard userName={displayUser.displayName} competition={competition} setCompetition={setCompetition} team={team} teamLeagueCount={participations.filter((item) => item.teamId === teamId).length} clubMotto={clubIdentityMeta[teamId]?.motto} leagues={leagues} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} onOpenLeague={openLeague} featuredFantasyEvent={fantasyEvents.find((event) => event.featured && event.status !== "finished")} onJoinFantasy={openFantasyJoin} navigate={navigate} />}
-          {active === "equipo" && <TeamView teamId={teamId} setTeamId={setTeamId} teams={teams} leagues={leagues} participations={participations} clubRules={clubRules} clubIdentityMeta={clubIdentityMeta} onUpdateClub={updateClubIdentity} competition={competition} setCompetition={setCompetition} freeLimit={initialData.rules.freeTeamsPerCompetition} onCreateTeam={() => setTeamCreatorOpen(true)} onOpenLeague={openLeague} onBrowseLeagues={() => navigate("ligas")} />}
+          {active === "inicio" && <Dashboard userName={displayUser.displayName} competition={competition} setCompetition={setCompetition} teamId={teamId} team={team} participations={participations} clubMotto={clubIdentityMeta[teamId]?.motto} leagues={leagues} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} onOpenLeague={openLeague} featuredFantasyEvent={fantasyEvents.find((event) => event.featured && event.status !== "finished")} onJoinFantasy={openFantasyJoin} navigate={navigate} />}
+          {active === "equipo" && <TeamView teamId={teamId} setTeamId={setTeamId} teams={teams} leagues={leagues} participations={participations} fantasyEvents={fantasyEvents} clubRules={clubRules} clubIdentityMeta={clubIdentityMeta} onUpdateClub={updateClubIdentity} competition={competition} setCompetition={setCompetition} freeLimit={initialData.rules.freeTeamsPerCompetition} onCreateTeam={() => setTeamCreatorOpen(true)} onOpenLeague={openLeague} onBrowseLeagues={() => navigate("ligas")} />}
           {active === "tendencias" && <TrendsView competition={competition} setCompetition={setCompetition} query={query} setQuery={setQuery} position={position} setPosition={setPosition} />}
-          {active === "ligas" && <LeaguesView leagues={leagues} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} fantasyEvents={fantasyEvents.filter((event) => event.status !== "draft" && event.status !== "finished")} onOpenLeague={openLeague} onJoinPublic={() => setPublicJoinOpen(true)} onJoinFantasy={openFantasyJoin} onCreatePrivate={() => setPrivateLeagueCreatorOpen(true)} onJoinCode={findPrivateLeagueByCode} joinCode={joinCode} setJoinCode={setJoinCode} notify={notify} />}
+          {active === "ligas" && <LeaguesView leagues={leagues} participations={participations} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} fantasyEvents={fantasyEvents.filter((event) => event.status !== "draft" && event.status !== "finished")} onOpenLeague={openLeague} onJoinPublic={() => setPublicJoinOpen(true)} onJoinFantasy={openFantasyJoin} onCreatePrivate={() => setPrivateLeagueCreatorOpen(true)} onJoinCode={findPrivateLeagueByCode} joinCode={joinCode} setJoinCode={setJoinCode} notify={notify} />}
           {active === "liga" && leagues.find((item) => item.id === selectedLeagueId) && (
             <LeagueDetailView
               league={leagues.find((item) => item.id === selectedLeagueId)!}
@@ -4042,7 +4042,7 @@ function CompetitionTabs({ value, onChange }: { value: CompetitionName; onChange
   );
 }
 
-function FeaturedFantasyEvent({ event, onJoin }: { event: FantasyEvent; onJoin: (eventId: string) => void }) {
+function FeaturedFantasyEvent({ event, joined, onJoin, onOpen }: { event: FantasyEvent; joined: boolean; onJoin: (eventId: string) => void; onOpen: (eventId: string) => void }) {
   const fixture = event.fixtures[0];
   return (
     <section className="featured-partidazo">
@@ -4068,14 +4068,20 @@ function FeaturedFantasyEvent({ event, onJoin }: { event: FantasyEvent; onJoin: 
         <small>{event.snapshot ? "PRESUPUESTO CONGELADO" : `SE PUBLICA AL CERRAR J${event.previousMatchday}`}</small>
         <strong>{event.snapshot ? `${event.snapshot.budget.toFixed(1).replace(".", ",")} M` : "Pendiente"}</strong>
         <span>{event.memberCount.toLocaleString("es-ES")} inscritos</span>
-        <button onClick={() => onJoin(event.id)}>{event.snapshot ? "Unirme y crear once" : "Inscribirme ahora"} →</button>
+        <button onClick={() => (joined ? onOpen(event.id) : onJoin(event.id))}>{joined ? "Abrir mi liga" : event.snapshot ? "Unirme y crear once" : "Inscribirme ahora"} →</button>
       </div>
     </section>
   );
 }
 
-function Dashboard({ userName, competition, setCompetition, team, teamLeagueCount, clubMotto, leagues, featuredLeagueIds, onToggleFeaturedLeague, onOpenLeague, featuredFantasyEvent, onJoinFantasy, navigate }: { userName: string; competition: CompetitionName; setCompetition: (value: CompetitionName) => void; team: string; teamLeagueCount: number; clubMotto?: string; leagues: LeagueSummary[]; featuredLeagueIds: string[]; onToggleFeaturedLeague: (leagueId: string) => void; onOpenLeague: (leagueId: string) => void; featuredFantasyEvent?: FantasyEvent; onJoinFantasy: (eventId?: string) => void; navigate: (value: Section) => void }) {
+function Dashboard({ userName, competition, setCompetition, teamId, team, participations, clubMotto, leagues, featuredLeagueIds, onToggleFeaturedLeague, onOpenLeague, featuredFantasyEvent, onJoinFantasy, navigate }: { userName: string; competition: CompetitionName; setCompetition: (value: CompetitionName) => void; teamId: string; team: string; participations: LeagueParticipation[]; clubMotto?: string; leagues: LeagueSummary[]; featuredLeagueIds: string[]; onToggleFeaturedLeague: (leagueId: string) => void; onOpenLeague: (leagueId: string) => void; featuredFantasyEvent?: FantasyEvent; onJoinFantasy: (eventId?: string) => void; navigate: (value: Section) => void }) {
   const featuredLeagues = leagues.filter((league) => featuredLeagueIds.includes(league.id)).slice(0, 4);
+  const clubParticipations = participations.filter((item) => item.teamId === teamId);
+  const rankedPositions = clubParticipations
+    .map((item) => leagues.find((league) => league.id === item.leagueId)?.rank)
+    .map((rank) => Number.parseInt(rank ?? "", 10))
+    .filter((rank) => Number.isFinite(rank) && rank > 0);
+  const bestPosition = rankedPositions.length ? Math.min(...rankedPositions) : null;
   const leagueAlert = (league: LeagueSummary, index: number) =>
     league.mode === "fantasy"
       ? { label: "Preparar once", tone: "lineup" }
@@ -4093,27 +4099,27 @@ function Dashboard({ userName, competition, setCompetition, team, teamLeagueCoun
           <h1>
             Buenas, {userName} <span>👋</span>
           </h1>
-          <p>Todo listo para preparar tu próxima jornada.</p>
+          <p>Este es el estado actual de tus clubes y competiciones.</p>
         </div>
         <CompetitionTabs value={competition} onChange={setCompetition} />
       </section>
 
-      {featuredFantasyEvent && <FeaturedFantasyEvent event={featuredFantasyEvent} onJoin={onJoinFantasy} />}
+      {featuredFantasyEvent && <FeaturedFantasyEvent event={featuredFantasyEvent} joined={participations.some((item) => item.leagueId === featuredFantasyEvent.id)} onJoin={onJoinFantasy} onOpen={onOpenLeague} />}
 
       <section className="hero-grid">
         <article className="matchday-card">
           <div className="matchday-copy">
-            <span className="status-dot">JORNADA 1 · ABIERTA</span>
+            <span className="status-dot">CLUB ACTIVO · {competition.toUpperCase()}</span>
             <h2>
-              Tu once empieza
+              Gestiona tu club
               <br />
-              aquí.
+              desde aquí.
             </h2>
             <p>
-              Cierre de alineaciones en <strong>4 días y 3 horas</strong>.
+              Revisa sus <strong>{clubParticipations.length} equipos</strong>, identidad e historial.
             </p>
             <button className="primary-button" onClick={() => navigate("equipo")}>
-              Preparar alineación <span>→</span>
+              Ver mi club <span>→</span>
             </button>
           </div>
           <div className="mini-pitch" aria-hidden="true">
@@ -4136,28 +4142,28 @@ function Dashboard({ userName, competition, setCompetition, team, teamLeagueCoun
             <button onClick={() => navigate("equipo")}>•••</button>
           </div>
           <div className="score-number">
-            <strong>{teamLeagueCount}</strong>
-            <span>equipos en ligas</span>
+              <strong>{clubParticipations.length}</strong>
+              <span>equipos en ligas</span>
           </div>
           <div className="score-stats">
             <div>
               <small>Carrera</small>
-              <strong>1.284 pts</strong>
+              <strong>0 pts</strong>
             </div>
             <div>
               <small>Mejor puesto</small>
-              <strong>3.º</strong>
+              <strong>{bestPosition ? `${bestPosition}.º` : "—"}</strong>
             </div>
             <div>
               <small>Palmarés</small>
-              <strong>2</strong>
+              <strong>0</strong>
             </div>
           </div>
           <button className="dashboard-active-club" onClick={() => navigate("equipo")}>
             <span>ACTIVO</span>
             <p>
-              <strong>#18 del ranking · ↑ 3</strong>
-              <small>{clubMotto || "Se preseleccionará en tus próximas ligas"}</small>
+              <strong>Sin clasificación todavía</strong>
+              <small>{clubMotto || "Se calculará cuando existan jornadas puntuadas"}</small>
             </p>
             <b>Gestionar →</b>
           </button>
@@ -4222,36 +4228,19 @@ function Dashboard({ userName, competition, setCompetition, team, teamLeagueCoun
         <article className="activity-card">
           <div className="section-title compact">
             <div>
-              <p className="eyebrow">TENDENCIAS</p>
-              <h2>Últimos movimientos</h2>
+              <p className="eyebrow">ACTIVIDAD REAL</p>
+              <h2>Movimientos del club</h2>
             </div>
             <button className="icon-button" onClick={() => navigate("tendencias")}>
               →
             </button>
           </div>
-          <div className="activity-row">
-            <Avatar label="LN" />
+          <div className="dashboard-activity-empty">
+            <span>↗</span>
             <div>
-              <strong>Leo Navarro</strong>
-              <small>Fichado por Barrio XI</small>
+              <strong>Sin movimientos registrados</strong>
+              <small>Las operaciones reales de tus equipos aparecerán aquí.</small>
             </div>
-            <span className="positive">7,1 M</span>
-          </div>
-          <div className="activity-row">
-            <Avatar label="IC" />
-            <div>
-              <strong>Iván Cruz</strong>
-              <small>Tu puja ha sido superada</small>
-            </div>
-            <span>6,7 M</span>
-          </div>
-          <div className="activity-row">
-            <Avatar label="RS" />
-            <div>
-              <strong>Raúl Sanz</strong>
-              <small>Nuevo en el mercado</small>
-            </div>
-            <span>4,8 M</span>
           </div>
         </article>
         <article className="data-card">
@@ -4262,7 +4251,7 @@ function Dashboard({ userName, competition, setCompetition, team, teamLeagueCoun
             <p>Las estadísticas se actualizarán una vez finalice cada partido.</p>
           </div>
           <span className="quota">
-            <strong>17</strong>/100 hoy
+            <strong>0</strong> partidos cerrados
           </span>
         </article>
       </section>
@@ -4270,7 +4259,7 @@ function Dashboard({ userName, competition, setCompetition, team, teamLeagueCoun
   );
 }
 
-function TeamView({ teamId, setTeamId, teams, leagues, participations, clubRules, clubIdentityMeta, onUpdateClub, competition, setCompetition, freeLimit, onCreateTeam, onOpenLeague, onBrowseLeagues }: { teamId: string; setTeamId: (value: string) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; clubRules: ClubRules; clubIdentityMeta: Record<string, ClubIdentityMeta>; onUpdateClub: (clubId: string, input: ClubIdentityInput) => string | null; competition: CompetitionName; setCompetition: (value: CompetitionName) => void; freeLimit: number; onCreateTeam: () => void; onOpenLeague: (leagueId: string) => void; onBrowseLeagues: () => void }) {
+function TeamView({ teamId, setTeamId, teams, leagues, participations, fantasyEvents, clubRules, clubIdentityMeta, onUpdateClub, competition, setCompetition, freeLimit, onCreateTeam, onOpenLeague, onBrowseLeagues }: { teamId: string; setTeamId: (value: string) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; fantasyEvents: FantasyEvent[]; clubRules: ClubRules; clubIdentityMeta: Record<string, ClubIdentityMeta>; onUpdateClub: (clubId: string, input: ClubIdentityInput) => string | null; competition: CompetitionName; setCompetition: (value: CompetitionName) => void; freeLimit: number; onCreateTeam: () => void; onOpenLeague: (leagueId: string) => void; onBrowseLeagues: () => void }) {
   const [editIdentityOpen, setEditIdentityOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const competitionClubs = teams.filter((item) => item.competition === competition);
@@ -4293,6 +4282,14 @@ function TeamView({ teamId, setTeamId, teams, leagues, participations, clubRules
     : [];
   const marketTeams = clubParticipations.filter(({ league }) => league.mode === "market").length;
   const fantasyTeams = clubParticipations.filter(({ league }) => league.mode === "fantasy").length;
+  const rankedPositions = clubParticipations
+    .map(({ league }) => Number.parseInt(league.rank, 10))
+    .filter((rank) => Number.isFinite(rank) && rank > 0);
+  const bestPosition = rankedPositions.length ? Math.min(...rankedPositions) : null;
+  const slotConsumingParticipations = clubParticipations.filter(({ league }) => {
+    const event = fantasyEvents.find((item) => item.id === league.id);
+    return clubRules.singleMatchEventsConsumeSlot || event?.format !== "partidazo";
+  }).length;
 
   function changeCompetition(value: CompetitionName) {
     setCompetition(value);
@@ -4374,22 +4371,22 @@ function TeamView({ teamId, setTeamId, teams, leagues, participations, clubRules
             </div>
             <b>Preferencia personal</b>
           </article>
-          <article className={`club-team-limit ${clubParticipations.length >= clubRules.maxActiveTeams ? "full" : ""}`}>
+          <article className={`club-team-limit ${slotConsumingParticipations >= clubRules.maxActiveTeams ? "full" : ""}`}>
             <div>
               <p className="eyebrow">CAPACIDAD DEL CLUB</p>
               <strong>
-                {clubParticipations.length}/{clubRules.maxActiveTeams} equipos activos
+                {slotConsumingParticipations}/{clubRules.maxActiveTeams} plazas ocupadas
               </strong>
               <small>Los eventos de un solo partido no ocupan plaza. Las ligas finalizadas liberan la suya.</small>
             </div>
             <div>
               <i
                 style={{
-                  width: `${Math.min(100, (clubParticipations.length / clubRules.maxActiveTeams) * 100)}%`,
+                  width: `${Math.min(100, (slotConsumingParticipations / clubRules.maxActiveTeams) * 100)}%`,
                 }}
               />
             </div>
-            <span>{clubParticipations.length >= clubRules.maxActiveTeams ? "Límite alcanzado" : `${clubRules.maxActiveTeams - clubParticipations.length} libres`}</span>
+            <span>{slotConsumingParticipations >= clubRules.maxActiveTeams ? "Límite alcanzado" : `${clubRules.maxActiveTeams - slotConsumingParticipations} libres`}</span>
           </article>
           <div className="club-career-stats">
             <div>
@@ -4398,15 +4395,15 @@ function TeamView({ teamId, setTeamId, teams, leagues, participations, clubRules
             </div>
             <div>
               <small>PUNTOS DE CARRERA</small>
-              <strong>{clubParticipations.length ? 1284 + clubParticipations.length * 37 : 0}</strong>
+              <strong>0</strong>
             </div>
             <div>
               <small>MEJOR POSICIÓN</small>
-              <strong>{clubParticipations.length ? "2.º" : "—"}</strong>
+              <strong>{bestPosition ? `${bestPosition}.º` : "—"}</strong>
             </div>
             <div>
               <small>TÍTULOS</small>
-              <strong>{clubParticipations.length > 2 ? 1 : 0}</strong>
+              <strong>0</strong>
             </div>
           </div>
           <section className="club-participations">
@@ -4422,7 +4419,7 @@ function TeamView({ teamId, setTeamId, teams, leagues, participations, clubRules
             </div>
             {clubParticipations.length ? (
               <div>
-                {clubParticipations.map(({ participation, league }, index) => (
+                {clubParticipations.map(({ participation, league }) => (
                   <article key={participation.id}>
                     <button onClick={() => onOpenLeague(league.id)}>
                       <span className={`league-symbol ${league.accent}`}>{league.name[0]}</span>
@@ -4438,7 +4435,7 @@ function TeamView({ teamId, setTeamId, teams, leagues, participations, clubRules
                         </span>
                         <span>
                           <small>{league.mode === "fantasy" ? "PUNTOS" : "SALDO"}</small>
-                          <b>{league.mode === "fantasy" ? `${84 + index * 11} pts` : `${participation.budget.toFixed(1).replace(".", ",")} M`}</b>
+                          <b>{league.mode === "fantasy" ? "0 pts" : `${participation.budget.toFixed(1).replace(".", ",")} M`}</b>
                         </span>
                       </section>
                       <i>›</i>
@@ -4624,52 +4621,18 @@ function ClubHistoryDialog({
 }) {
   const [season, setSeason] = useState("26/27");
   const [mode, setMode] = useState<"Todas" | "Mercado" | "Fantástica">("Todas");
-  const activeRows = participations.map(({ league }, index) => ({
+  const activeRows = participations.map(({ league }) => ({
     id: league.id,
     name: league.name,
     type: league.mode === "fantasy" ? "Fantástica" : "Mercado",
     status: "En curso",
     position: league.rank,
-    points: 96 + index * 17,
+    points: 0,
     season: "26/27",
-    result: index === 0 ? "Racha de 3 jornadas" : "Próxima jornada abierta",
+    result: "Sin jornadas puntuadas",
     active: true,
   }));
-  const pastRows = [
-    {
-      id: "history_champions",
-      name: "Liga del Barrio",
-      type: "Mercado",
-      status: "Finalizada",
-      position: "1.º",
-      points: 812,
-      season: "25/26",
-      result: "Campeón",
-      active: false,
-    },
-    {
-      id: "history_fantasy",
-      name: "Clásicos de Primavera",
-      type: "Fantástica",
-      status: "Finalizada",
-      position: "3.º",
-      points: 184,
-      season: "25/26",
-      result: "Podio",
-      active: false,
-    },
-    {
-      id: "history_cup",
-      name: "El Partidazo · Final",
-      type: "Fantástica",
-      status: "Finalizada",
-      position: "8.º",
-      points: 71,
-      season: "26/27",
-      result: "Top 10",
-      active: false,
-    },
-  ];
+  const pastRows: typeof activeRows = [];
   const rows = [...activeRows, ...pastRows].filter((row) => row.season === season && (mode === "Todas" || row.type === mode));
   return (
     <div className="dialog-backdrop club-history-backdrop">
@@ -4687,10 +4650,10 @@ function ClubHistoryDialog({
           <span>{club.shortName}</span>
           <div>
             <small>{club.competition}</small>
-            <strong>1.284 puntos de carrera</strong>
-            <p>2 títulos · 3 podios · mejor posición 1.º</p>
+            <strong>0 puntos de carrera</strong>
+            <p>0 títulos · 0 podios · mejor posición —</p>
           </div>
-          <b>#18 global</b>
+          <b>Sin ranking</b>
         </div>
         <div className="club-history-filters">
           <div>
@@ -4730,22 +4693,9 @@ function ClubHistoryDialog({
         </div>
         <section className="club-honours">
           <p className="eyebrow">VITRINA DEL CLUB</p>
-          <div>
-            <article>
-              <span>★</span>
-              <strong>Campeón de liga</strong>
-              <small>25/26</small>
-            </article>
-            <article>
-              <span>III</span>
-              <strong>Podio fantástico</strong>
-              <small>25/26</small>
-            </article>
-            <article>
-              <span>10</span>
-              <strong>Top 10 Partidazo</strong>
-              <small>26/27</small>
-            </article>
+          <div className="club-honours-empty">
+            <strong>Todavía no hay trofeos</strong>
+            <small>Los títulos y podios aparecerán al finalizar ligas y retos.</small>
           </div>
         </section>
         <div className="dialog-actions">
@@ -4759,76 +4709,6 @@ function ClubHistoryDialog({
 }
 
 function ClubRanking({ activeClub, competition, maxResults }: { activeClub: FantasyTeamSummary; competition: CompetitionName; maxResults: number }) {
-  const [scope, setScope] = useState<"global" | "friends">("global");
-  const rivals = [
-    {
-      id: "club_norte",
-      name: "Atlético Norte",
-      owner: "Sara R.",
-      initials: "AN",
-      score: 914,
-      movement: 2,
-      titles: 4,
-      teams: 7,
-      friend: true,
-    },
-    {
-      id: "club_distrito",
-      name: "Distrito Sur",
-      owner: "Diego Ramos",
-      initials: "DS",
-      score: 887,
-      movement: -1,
-      titles: 3,
-      teams: 6,
-      friend: true,
-    },
-    {
-      id: activeClub.id,
-      name: activeClub.name,
-      owner: "Tú",
-      initials: activeClub.shortName,
-      score: 842,
-      movement: 3,
-      titles: 2,
-      teams: 5,
-      friend: true,
-    },
-    {
-      id: "club_union",
-      name: "Unión Central",
-      owner: "Javi Soto",
-      initials: "UC",
-      score: 819,
-      movement: 0,
-      titles: 1,
-      teams: 8,
-      friend: true,
-    },
-    {
-      id: "club_barrio",
-      name: "Barrio Alto",
-      owner: "Carmen Gil",
-      initials: "BA",
-      score: 784,
-      movement: -2,
-      titles: 2,
-      teams: 4,
-      friend: false,
-    },
-    {
-      id: "club_reyes",
-      name: "Reyes del Área",
-      owner: "Marcos L.",
-      initials: "RA",
-      score: 762,
-      movement: 1,
-      titles: 0,
-      teams: 3,
-      friend: false,
-    },
-  ];
-  const visible = rivals.filter((club) => scope === "global" || club.friend).sort((a, b) => b.score - a.score);
   return (
     <section className="club-ranking">
       <header>
@@ -4837,47 +4717,13 @@ function ClubRanking({ activeClub, competition, maxResults }: { activeClub: Fant
           <h2>Compárate con otros usuarios</h2>
           <p>La puntuación utiliza los {maxResults} mejores resultados normalizados de la temporada.</p>
         </div>
-        <nav>
-          <button className={scope === "global" ? "active" : ""} onClick={() => setScope("global")}>
-            Global
-          </button>
-          <button className={scope === "friends" ? "active" : ""} onClick={() => setScope("friends")}>
-            Amigos
-          </button>
-        </nav>
       </header>
-      <div className="club-ranking-head">
-        <span>#</span>
-        <span>Club</span>
-        <span>Equipos</span>
-        <span>Títulos</span>
-        <span>Puntuación</span>
-      </div>
-      <div>
-        {visible.map((club, index) => {
-          const mine = club.id === activeClub.id;
-          return (
-            <article className={mine ? "mine" : ""} key={club.id}>
-              <strong>{index + 1}</strong>
-              <span className="ranking-avatar">{club.initials}</span>
-              <p>
-                <b>
-                  {club.name}
-                  {mine && <em>TÚ</em>}
-                </b>
-                <small>
-                  {club.owner} · {competition}
-                </small>
-              </p>
-              <span>{club.teams}</span>
-              <span>{club.titles}</span>
-              <div>
-                <b>{club.score}</b>
-                <small className={club.movement > 0 ? "positive" : club.movement < 0 ? "negative" : ""}>{club.movement > 0 ? `↑ ${club.movement}` : club.movement < 0 ? `↓ ${Math.abs(club.movement)}` : "—"}</small>
-              </div>
-            </article>
-          );
-        })}
+      <div className="club-ranking-empty">
+        <span>{activeClub.shortName}</span>
+        <div>
+          <strong>La clasificación aún no ha comenzado</strong>
+          <p>{activeClub.name} aparecerá cuando haya jornadas puntuadas y resultados comparables.</p>
+        </div>
       </div>
       <footer>
         <span>i</span>
@@ -4885,7 +4731,6 @@ function ClubRanking({ activeClub, competition, maxResults }: { activeClub: Fant
           <strong>Comparación justa</strong>
           <small>Participar en más ligas no suma automáticamente: solo cuentan los mejores resultados y se normalizan por modalidad y número de participantes.</small>
         </p>
-        <button>Ver ranking completo →</button>
       </footer>
     </section>
   );
@@ -5355,12 +5200,14 @@ function TrendPlayerRow({ player, rank }: { player: PlayerTrend; rank: number })
   );
 }
 
-function LeaguesView({ leagues, featuredLeagueIds, onToggleFeaturedLeague, fantasyEvents, onOpenLeague, onJoinPublic, onJoinFantasy, onCreatePrivate, onJoinCode, joinCode, setJoinCode, notify }: { leagues: LeagueSummary[]; featuredLeagueIds: string[]; onToggleFeaturedLeague: (leagueId: string) => void; fantasyEvents: FantasyEvent[]; onOpenLeague: (leagueId: string) => void; onJoinPublic: () => void; onJoinFantasy: (eventId?: string) => void; onCreatePrivate: () => void; onJoinCode: (code: string) => void; joinCode: string; setJoinCode: (v: string) => void; notify: (v: string) => void }) {
+function LeaguesView({ leagues, participations, featuredLeagueIds, onToggleFeaturedLeague, fantasyEvents, onOpenLeague, onJoinPublic, onJoinFantasy, onCreatePrivate, onJoinCode, joinCode, setJoinCode, notify }: { leagues: LeagueSummary[]; participations: LeagueParticipation[]; featuredLeagueIds: string[]; onToggleFeaturedLeague: (leagueId: string) => void; fantasyEvents: FantasyEvent[]; onOpenLeague: (leagueId: string) => void; onJoinPublic: () => void; onJoinFantasy: (eventId?: string) => void; onCreatePrivate: () => void; onJoinCode: (code: string) => void; joinCode: string; setJoinCode: (v: string) => void; notify: (v: string) => void }) {
   const [fantasyDirectoryOpen, setFantasyDirectoryOpen] = useState(false);
+  const joinedLeagueIds = new Set(participations.map((item) => item.leagueId));
 
   function chooseFantasyEvent(eventId: string) {
     setFantasyDirectoryOpen(false);
-    onJoinFantasy(eventId);
+    if (joinedLeagueIds.has(eventId)) onOpenLeague(eventId);
+    else onJoinFantasy(eventId);
   }
 
   return (
@@ -5422,7 +5269,7 @@ function LeaguesView({ leagues, featuredLeagueIds, onToggleFeaturedLeague, fanta
         </div>
         <div className="fantasy-event-cards">
           {fantasyEvents.map((event) => (
-            <button className={event.featured ? "featured" : ""} key={event.id} onClick={() => onJoinFantasy(event.id)}>
+            <button className={event.featured ? "featured" : ""} key={event.id} onClick={() => chooseFantasyEvent(event.id)}>
               <span>{event.format === "partidazo" ? "★" : event.format === "matches" ? "◆" : "J"}</span>
               <div>
                 <small>{event.format === "partidazo" ? "EL PARTIDAZO" : event.format === "matches" ? `${event.fixtures.length} PARTIDOS` : `${event.matchdays.length} JORNADAS`}</small>
@@ -5436,7 +5283,7 @@ function LeaguesView({ leagues, featuredLeagueIds, onToggleFeaturedLeague, fanta
               </div>
               <b>
                 {event.snapshot ? `${event.snapshot.budget.toFixed(1).replace(".", ",")} M` : "Presupuesto pendiente"}
-                <small>{event.memberCount} inscritos</small>
+                <small>{joinedLeagueIds.has(event.id) ? "Ya estás dentro · abrir" : `${event.memberCount} inscritos`}</small>
               </b>
             </button>
           ))}
@@ -5471,7 +5318,7 @@ function LeaguesView({ leagues, featuredLeagueIds, onToggleFeaturedLeague, fanta
                     </div>
                     <b>
                       {event.snapshot ? `${event.snapshot.budget.toFixed(1).replace(".", ",")} M` : `Pendiente hasta J${event.previousMatchday}`}
-                      <small>{event.memberCount}/{event.capacity} inscritos</small>
+                      <small>{joinedLeagueIds.has(event.id) ? "Ya estás dentro · abrir liga" : `${event.memberCount}/${event.capacity} inscritos`}</small>
                     </b>
                   </button>
                 );
