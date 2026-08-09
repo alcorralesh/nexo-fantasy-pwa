@@ -13,7 +13,7 @@ import { acceptNexoLegalDocuments, completeNexoOnboarding, createNexoTeam, loadN
 import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, reserveNexoLeaguePlace } from "./services/nexo-leagues";
 import { loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, runNexoPlayerCatalogSync, updateNexoPlayer, type CatalogSyncJob, type CatalogSyncResult } from "./services/nexo-players";
 import { loadNexoCalendarSyncHistory, loadNexoMatchCalendar, runNexoCalendarSync, type CalendarSyncJob, type CalendarSyncResult, type MatchFixture } from "./services/nexo-calendar";
-import { loadNexoMatchdayLineups, loadNexoMatchdayStates, saveNexoMatchdayLineup, type NexoMatchdayState } from "./services/nexo-matchdays";
+import { deleteNexoMatchdaySimulation, loadNexoMatchdayLineups, loadNexoMatchdayStates, saveNexoMatchdayLineup, simulateNexoMatchdayClose, type NexoMatchdaySimulation, type NexoMatchdayState, type NexoSimulationScenario } from "./services/nexo-matchdays";
 import { createNexoChallenge, loadNexoChallenges, snapshotNexoChallenge } from "./services/nexo-challenges";
 import { withBasePath } from "./base-path";
 
@@ -3090,6 +3090,8 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
               sentOffers={sentOffers}
               playerCatalog={adminPlayerCatalog}
               matchFixtures={matchFixtures}
+              matchdays={backendMatchdays}
+              simulationEnabled={sessionUser.id !== "demo_user"}
               catalogSyncEnabled={sessionUser.id !== "demo_user"}
               onCatalogSyncApplied={refreshBackendPlayerCatalog}
               onSavePlayer={async (player) => {
@@ -11324,7 +11326,7 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
   );
 }
 
-function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, economyRules, setEconomyRules, settlementRules, setSettlementRules, onboardingConfig, onForceOnboarding, legalConfig, onPublishLegalVersion, scoringRules, onChangeScoringRules, teams, leagues, participations, squads, bids, playerContracts, playerOffers, sentOffers, playerCatalog, matchFixtures, catalogSyncEnabled, onCatalogSyncApplied, onSavePlayer, fantasyEvents, onCreateFantasyEvent, onSnapshotFantasyEvent, onOpenLeague, onRenewMarket, notify }: { marketRules: MarketRules; setMarketRules: (rules: MarketRules) => void; clubRules: ClubRules; setClubRules: (rules: ClubRules) => void; economyRules: EconomyRules; setEconomyRules: (rules: EconomyRules) => void; settlementRules: MatchdaySettlementRules; setSettlementRules: (rules: MatchdaySettlementRules) => void; onboardingConfig: OnboardingConfig; onForceOnboarding: (reason: string) => void; legalConfig: LegalConfig; onPublishLegalVersion: (kind: "privacy" | "terms", changeSummary: string) => void; scoringRules: ScoringRule[]; onChangeScoringRules: (rules: ScoringRule[]) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; squads: Record<string, InitialSquad>; bids: Record<string, MarketBid[]>; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; sentOffers: Record<string, SentOffer[]>; playerCatalog: Record<CompetitionName, CompetitionPlayer[]>; matchFixtures: MatchFixture[]; catalogSyncEnabled: boolean; onCatalogSyncApplied: () => Promise<void>; onSavePlayer: (player: CompetitionPlayer) => Promise<void>; fantasyEvents: FantasyEvent[]; onCreateFantasyEvent: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshotFantasyEvent: (eventId: string) => Promise<void> | void; onOpenLeague: (leagueId: string) => void; onRenewMarket: (leagueId: string) => void; notify: (v: string) => void }) {
+function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, economyRules, setEconomyRules, settlementRules, setSettlementRules, onboardingConfig, onForceOnboarding, legalConfig, onPublishLegalVersion, scoringRules, onChangeScoringRules, teams, leagues, participations, squads, bids, playerContracts, playerOffers, sentOffers, playerCatalog, matchFixtures, matchdays, simulationEnabled, catalogSyncEnabled, onCatalogSyncApplied, onSavePlayer, fantasyEvents, onCreateFantasyEvent, onSnapshotFantasyEvent, onOpenLeague, onRenewMarket, notify }: { marketRules: MarketRules; setMarketRules: (rules: MarketRules) => void; clubRules: ClubRules; setClubRules: (rules: ClubRules) => void; economyRules: EconomyRules; setEconomyRules: (rules: EconomyRules) => void; settlementRules: MatchdaySettlementRules; setSettlementRules: (rules: MatchdaySettlementRules) => void; onboardingConfig: OnboardingConfig; onForceOnboarding: (reason: string) => void; legalConfig: LegalConfig; onPublishLegalVersion: (kind: "privacy" | "terms", changeSummary: string) => void; scoringRules: ScoringRule[]; onChangeScoringRules: (rules: ScoringRule[]) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; squads: Record<string, InitialSquad>; bids: Record<string, MarketBid[]>; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; sentOffers: Record<string, SentOffer[]>; playerCatalog: Record<CompetitionName, CompetitionPlayer[]>; matchFixtures: MatchFixture[]; matchdays: NexoMatchdayState[]; simulationEnabled: boolean; catalogSyncEnabled: boolean; onCatalogSyncApplied: () => Promise<void>; onSavePlayer: (player: CompetitionPlayer) => Promise<void>; fantasyEvents: FantasyEvent[]; onCreateFantasyEvent: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshotFantasyEvent: (eventId: string) => Promise<void> | void; onOpenLeague: (leagueId: string) => void; onRenewMarket: (leagueId: string) => void; notify: (v: string) => void }) {
   const [section, setSection] = useState<AdminSection>("overview");
   const [selectedUserId, setSelectedUserId] = useState(adminDemoUsers[0].id);
   const [selectedLeagueId, setSelectedLeagueId] = useState(leagues[0]?.id ?? "");
@@ -11445,7 +11447,7 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, econo
           </section>
           <CalendarSyncAdminPanel enabled={catalogSyncEnabled} notify={notify} />
           <FantasyEventsAdminPanel events={fantasyEvents} fixtures={matchFixtures} onCreate={onCreateFantasyEvent} onSnapshot={onSnapshotFantasyEvent} />
-          <MatchdaySettlementAdminPanel rules={settlementRules} onChange={setSettlementRules} notify={notify} />
+          <MatchdaySettlementAdminPanel rules={settlementRules} onChange={setSettlementRules} matchdays={matchdays} enabled={simulationEnabled} notify={notify} />
           <OnboardingAdminPanel config={onboardingConfig} onForce={onForceOnboarding} />
           <LegalVersionsAdminPanel config={legalConfig} onPublish={onPublishLegalVersion} />
           <section className="admin-grid">
@@ -12401,9 +12403,54 @@ function OnboardingAdminPanel({ config, onForce }: { config: OnboardingConfig; o
   );
 }
 
-function MatchdaySettlementAdminPanel({ rules, onChange, notify }: { rules: MatchdaySettlementRules; onChange: (rules: MatchdaySettlementRules) => void; notify: (value: string) => void }) {
+function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, notify }: { rules: MatchdaySettlementRules; onChange: (rules: MatchdaySettlementRules) => void; matchdays: NexoMatchdayState[]; enabled: boolean; notify: (value: string) => void }) {
   const examplePoints = 58;
   const examplePayout = Math.min(rules.maximumPayout, Math.max(rules.minimumPayout, examplePoints * rules.moneyPerPoint));
+  const competitionIds = [...new Set(matchdays.map((item) => item.competitionId))];
+  const [simulationCompetition, setSimulationCompetition] = useState(competitionIds[0] ?? "primera");
+  const availableMatchdays = matchdays.filter((item) => item.competitionId === simulationCompetition);
+  const [simulationMatchday, setSimulationMatchday] = useState(availableMatchdays[0]?.matchday ?? 1);
+  const [simulationScenario, setSimulationScenario] = useState<NexoSimulationScenario>("normal");
+  const [simulation, setSimulation] = useState<NexoMatchdaySimulation | null>(null);
+  const [simulationLoading, setSimulationLoading] = useState(false);
+  const [simulationError, setSimulationError] = useState("");
+
+  useEffect(() => {
+    if (!availableMatchdays.some((item) => item.matchday === simulationMatchday) && availableMatchdays[0]) setSimulationMatchday(availableMatchdays[0].matchday);
+  }, [simulationCompetition, availableMatchdays, simulationMatchday]);
+
+  async function runSimulation() {
+    if (!enabled) {
+      notify("La simulación real necesita una sesión de administrador conectada a Supabase");
+      return;
+    }
+    setSimulationLoading(true);
+    setSimulationError("");
+    try {
+      const result = await simulateNexoMatchdayClose({ competitionId: simulationCompetition, matchday: simulationMatchday, scenario: simulationScenario });
+      setSimulation(result);
+      notify(`Simulación J${simulationMatchday} completada sin modificar la temporada`);
+    } catch (failure) {
+      setSimulationError(failure instanceof Error ? failure.message : "No se ha podido ejecutar la simulación");
+    } finally {
+      setSimulationLoading(false);
+    }
+  }
+
+  async function discardSimulation() {
+    if (!simulation) return;
+    try {
+      await deleteNexoMatchdaySimulation(simulation.runId);
+      setSimulation(null);
+      notify("Informe de simulación eliminado");
+    } catch (failure) {
+      setSimulationError(failure instanceof Error ? failure.message : "No se ha podido eliminar el informe");
+    }
+  }
+
+  function simulationStateLabel(state: NexoMatchdayState["state"]) {
+    return state === "scheduled" ? "Programada" : state === "open" ? "Abierta" : state === "locked" ? "Bloqueada" : state === "awaiting_stats" ? "Esperando estadísticas" : "Cerrada";
+  }
   return (
     <section className="admin-panel settlement-admin-panel">
       <div className="section-title">
@@ -12611,17 +12658,81 @@ function MatchdaySettlementAdminPanel({ rules, onChange, notify }: { rules: Matc
         </p>
         <b>{rules.activateNextFantasyEvents ? "ACTIVO" : "INACTIVO"}</b>
       </button>
+      <section className="matchday-simulator">
+        <div className="section-title compact">
+          <div>
+            <p className="eyebrow">ENTORNO SEGURO DE PRUEBAS</p>
+            <h2>Simular un cierre completo</h2>
+            <p>Calcula fotografías, puntos, pagos, ranking y retos sin escribir nada en la temporada oficial.</p>
+          </div>
+          <span className="active-tag">PRODUCCIÓN INTACTA</span>
+        </div>
+        <div className="matchday-simulator-controls">
+          <label>
+            <span>Competición</span>
+            <select value={simulationCompetition} onChange={(event) => { setSimulationCompetition(event.target.value); setSimulation(null); }} disabled={!competitionIds.length}>
+              {(competitionIds.length ? competitionIds : ["primera"]).map((id) => <option key={id} value={id}>{id === "primera" ? "Primera" : id === "segunda" ? "Segunda" : "Liga F"}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Jornada</span>
+            <select value={simulationMatchday} onChange={(event) => { setSimulationMatchday(Number(event.target.value)); setSimulation(null); }} disabled={!availableMatchdays.length}>
+              {(availableMatchdays.length ? availableMatchdays : [{ matchday: 1, state: "open" as const }]).map((item) => <option key={item.matchday} value={item.matchday}>Jornada {item.matchday} · {simulationStateLabel(item.state)}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Escenario</span>
+            <select value={simulationScenario} onChange={(event) => { setSimulationScenario(event.target.value as NexoSimulationScenario); setSimulation(null); }}>
+              <option value="normal">Todos los partidos finalizados</option>
+              <option value="postponed">Un partido aplazado</option>
+              <option value="advanced">Jornada adelantada</option>
+            </select>
+          </label>
+          <button className="primary-button" onClick={runSimulation} disabled={simulationLoading || !enabled || !availableMatchdays.length}>
+            {simulationLoading ? "Calculando…" : "Simular cierre"}
+          </button>
+        </div>
+        {!enabled && <p className="simulation-note">Inicia sesión con el administrador real para ejecutar la simulación contra Supabase.</p>}
+        {enabled && !availableMatchdays.length && <p className="simulation-note">No hay jornadas sincronizadas para esta competición.</p>}
+        {simulationError && <p className="form-error">{simulationError}</p>}
+        {simulation && (
+          <div className="simulation-result">
+            <header>
+              <div>
+                <p className="eyebrow">INFORME · JORNADA {simulation.matchday}</p>
+                <h3>La temporada oficial no ha cambiado</h3>
+                <small>Informe {simulation.runId.slice(0, 8)} · estado real: {simulationStateLabel(simulation.officialState)}</small>
+              </div>
+              <button className="secondary-button" onClick={discardSimulation}>Eliminar informe</button>
+            </header>
+            <section className="simulation-result-kpis">
+              <article><small>Participaciones</small><strong>{simulation.memberships}</strong></article>
+              <article><small>Alineaciones válidas</small><strong>{simulation.validLineups}</strong></article>
+              <article><small>Sin once válido</small><strong>{simulation.zeroLineups}</strong></article>
+              <article><small>Saldo simulado</small><strong>+{simulation.totalPayout.toFixed(1).replace(".", ",")} M</strong></article>
+              <article><small>Retos que se activarían</small><strong>{simulation.challengesToActivate}</strong></article>
+            </section>
+            <div className="simulation-result-table">
+              <div className="simulation-result-row head"><span>#</span><span>Equipo y liga</span><span>Origen</span><span>Puntos</span><span>Pago</span></div>
+              {simulation.results.map((row) => (
+                <div className="simulation-result-row" key={row.membershipId}>
+                  <strong>{row.rank}</strong>
+                  <span><b>{row.teamName}</b><small>{row.leagueName} · {row.mode === "market" ? "Mercado" : "Fantástica"}</small></span>
+                  <em>{row.source === "saved_draft" ? "Borrador" : row.source === "roster_fallback" ? "Plantilla" : "Sin once"}</em>
+                  <b>{row.points} pts</b>
+                  <b>+{row.payout.toFixed(1).replace(".", ",")} M</b>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
       <footer>
         <div>
-          <strong>Simulación de cierre · J4</strong>
-          <span>58 puntos → +{examplePayout.toFixed(1).replace(".", ",")} M · 2 Partidazos preparados para J5</span>
+          <strong>Ejemplo con las reglas actuales</strong>
+          <span>58 puntos → +{examplePayout.toFixed(1).replace(".", ",")} M</span>
         </div>
-        <button className="secondary-button" onClick={() => notify(`Simulación completada: +${examplePayout.toFixed(1).replace(".", ",")} M y eventos J5 activados`)}>
-          Simular cierre
-        </button>
-        <button className="primary-button" onClick={() => notify("Reglas de cierre guardadas para jornadas futuras")}>
-          Guardar reglas
-        </button>
+        <button className="primary-button" onClick={() => notify("Reglas de cierre guardadas para jornadas futuras")}>Guardar reglas</button>
       </footer>
     </section>
   );

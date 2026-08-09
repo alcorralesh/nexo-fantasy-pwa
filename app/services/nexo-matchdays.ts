@@ -27,6 +27,43 @@ export type NexoMatchdayState = {
   statsReadyCount: number;
 };
 
+export type NexoSimulationScenario = "normal" | "postponed" | "advanced";
+
+export type NexoSimulationResultRow = {
+  membershipId: string;
+  leagueId: string;
+  leagueName: string;
+  mode: "market" | "fantasy";
+  teamName: string;
+  managerName: string;
+  source: "saved_draft" | "roster_fallback" | "empty";
+  points: number;
+  payout: number;
+  currentBudget: number;
+  simulatedBudget: number;
+  rank: number;
+};
+
+export type NexoMatchdaySimulation = {
+  runId: string;
+  createdAt: string;
+  competitionId: string;
+  season: string;
+  matchday: number;
+  scenario: NexoSimulationScenario;
+  officialState: NexoMatchdayState["state"];
+  productionUntouched: boolean;
+  fixtureCount: number;
+  simulatedFinalFixtures: number;
+  memberships: number;
+  validLineups: number;
+  zeroLineups: number;
+  totalPoints: number;
+  totalPayout: number;
+  challengesToActivate: number;
+  results: NexoSimulationResultRow[];
+};
+
 function requireClient() {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase todavía no está configurado.");
@@ -85,6 +122,55 @@ export async function loadNexoMatchdayStates(): Promise<NexoMatchdayState[]> {
     finalFixtureCount: row.final_fixture_count,
     statsReadyCount: row.stats_ready_count,
   }));
+}
+
+export async function simulateNexoMatchdayClose(input: { competitionId: string; season?: string; matchday: number; scenario: NexoSimulationScenario }): Promise<NexoMatchdaySimulation> {
+  const client = requireClient();
+  const { data, error } = await client.rpc("admin_simulate_matchday_close", {
+    target_competition_id: input.competitionId,
+    target_season: input.season ?? "2026",
+    target_matchday: input.matchday,
+    target_scenario: input.scenario,
+  });
+  if (error) throw new Error(error.message);
+  const result = data as Record<string, unknown>;
+  return {
+    runId: String(result.runId),
+    createdAt: String(result.createdAt),
+    competitionId: String(result.competitionId),
+    season: String(result.season),
+    matchday: Number(result.matchday),
+    scenario: result.scenario as NexoSimulationScenario,
+    officialState: result.officialState as NexoMatchdayState["state"],
+    productionUntouched: Boolean(result.productionUntouched),
+    fixtureCount: Number(result.fixtureCount),
+    simulatedFinalFixtures: Number(result.simulatedFinalFixtures),
+    memberships: Number(result.memberships),
+    validLineups: Number(result.validLineups),
+    zeroLineups: Number(result.zeroLineups),
+    totalPoints: Number(result.totalPoints),
+    totalPayout: Number(result.totalPayout),
+    challengesToActivate: Number(result.challengesToActivate),
+    results: ((result.results ?? []) as Record<string, unknown>[]).map((row) => ({
+      membershipId: String(row.membershipId),
+      leagueId: String(row.leagueId),
+      leagueName: String(row.leagueName),
+      mode: row.mode as "market" | "fantasy",
+      teamName: String(row.teamName),
+      managerName: String(row.managerName),
+      source: row.source as NexoSimulationResultRow["source"],
+      points: Number(row.points),
+      payout: Number(row.payout),
+      currentBudget: Number(row.currentBudget),
+      simulatedBudget: Number(row.simulatedBudget),
+      rank: Number(row.rank),
+    })),
+  };
+}
+
+export async function deleteNexoMatchdaySimulation(runId: string): Promise<void> {
+  const { error } = await requireClient().rpc("admin_delete_matchday_simulation", { target_run_id: runId });
+  if (error) throw new Error(error.message);
 }
 
 function mapDraft(row: Record<string, unknown>): NexoLineupDraft {
