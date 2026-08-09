@@ -10,7 +10,7 @@ import { defaultMarketValueConfig, type MarketValueConfig } from "./domain/marke
 import { calculatePlayerPoints, defaultScoringRules, demoPlayerMatchStats, type ScoringRule } from "./domain/scoring";
 import { createDemoAllocationGateway } from "./services/initial-squad-allocation";
 import { acceptNexoLegalDocuments, completeNexoOnboarding, createNexoTeam, loadNexoIdentity, registerInNexo, sendNexoPasswordReset, signInToNexo, signOutFromNexo, type NexoIdentity, type NexoRegistration } from "./services/nexo-auth";
-import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, regenerateNexoPrivateLeagueCode, reserveNexoLeaguePlace, updateNexoPrivateLeague } from "./services/nexo-leagues";
+import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, regenerateNexoPrivateLeagueCode, reserveNexoLeaguePlace, updateNexoPrivateLeague, type NexoLeagueRankingRow } from "./services/nexo-leagues";
 import { cancelNexoMarketBid, forceNexoMarketRenewal, loadNexoLeagueMarket, placeNexoMarketBid, type NexoLeagueMarket } from "./services/nexo-market";
 import { loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, runNexoPlayerCatalogSync, updateNexoPlayer, type CatalogSyncJob, type CatalogSyncResult } from "./services/nexo-players";
 import { loadNexoCalendarSyncHistory, loadNexoMatchCalendar, runNexoCalendarSync, type CalendarSyncJob, type CalendarSyncResult, type MatchFixture } from "./services/nexo-calendar";
@@ -1463,6 +1463,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
   const [clausePurchases, setClausePurchases] = useState<Record<string, ClausePurchase[]>>({});
   const [privateLeagueRules, setPrivateLeagueRules] = useState<Record<string, PrivateLeagueRules>>({});
   const [privateLeagueAdminIds, setPrivateLeagueAdminIds] = useState<string[]>([]);
+  const [leagueRankings, setLeagueRankings] = useState<Record<string, NexoLeagueRankingRow[]>>({});
   const [privateLeagueInvites, setPrivateLeagueInvites] = useState<PrivateLeagueInvite[]>(() => createDemoPrivateInvites());
   const [leagueReports, setLeagueReports] = useState<LeagueReport[]>([]);
   const [fantasyLineups, setFantasyLineups] = useState<Record<string, FantasyLineupDraft>>(() => {
@@ -1701,6 +1702,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       setParticipations(state.participations);
       setPrivateLeagueAdminIds(state.adminLeagueIds);
       setPrivateLeagueRules(state.privateLeagueRules as Record<string, PrivateLeagueRules>);
+      setLeagueRankings(state.rankings);
       setInitialSquads((current) => ({ ...current, ...state.squads }));
     } catch {
       /* La pantalla puede seguir usando los datos de demostración si la red falla. */
@@ -2995,6 +2997,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
               }))}
               marketRules={{ ...effectiveMarketRules, activeMatchday: selectedEditableMatchday }}
               backendMarketEnabled={sessionUser.id !== "demo_user"}
+              rankingRows={leagueRankings[selectedLeagueId] ?? []}
               privateRules={selectedPrivateRules}
               canManagePrivateLeague={privateLeagueAdminIds.includes(selectedLeagueId)}
               privateAdmin={privateLeagueInvites.find((invite) => invite.league.id === selectedLeagueId)?.participants.find((participant) => participant.role === "admin")}
@@ -5528,7 +5531,7 @@ function LeagueAreaNav({ section, onChange, mobile = false }: { section: LeagueA
   );
 }
 
-function LeagueDetailView({ league, team, participation, squad, section, onSectionChange, onBack, marketPlayers, marketRules, backendMarketEnabled, privateRules, canManagePrivateLeague, privateAdmin, privateParticipants, onManagePrivateLeague, reports, onReport, onResolveReport, onLeaveLeague, bids, onChangeBids, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, scoringRules, settlementRules, fixtures, fantasyLineup, previousFantasyLineup, fantasyEvent, onSaveFantasyLineup, onAdjustBudget, onImmediateSale, notify }: { league: LeagueSummary; team: FantasyTeamSummary; participation?: LeagueParticipation; squad?: InitialSquad; section: LeagueAreaSection; onSectionChange: (section: LeagueAreaSection) => void; onBack: () => void; marketPlayers: MarketPlayer[]; marketRules: MarketRules; backendMarketEnabled: boolean; privateRules?: PrivateLeagueRules; canManagePrivateLeague: boolean; privateAdmin?: PrivateLeagueParticipant; privateParticipants: PrivateLeagueParticipant[]; onManagePrivateLeague: () => void; reports: LeagueReport[]; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeaveLeague: (successorId?: string) => Promise<string | null>; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; fixtures: MatchFixture[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; fantasyEvent?: FantasyEvent; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => Promise<void> | void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; notify: (message: string) => void }) {
+function LeagueDetailView({ league, team, participation, squad, section, onSectionChange, onBack, marketPlayers, marketRules, backendMarketEnabled, rankingRows, privateRules, canManagePrivateLeague, privateAdmin, privateParticipants, onManagePrivateLeague, reports, onReport, onResolveReport, onLeaveLeague, bids, onChangeBids, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, scoringRules, settlementRules, fixtures, fantasyLineup, previousFantasyLineup, fantasyEvent, onSaveFantasyLineup, onAdjustBudget, onImmediateSale, notify }: { league: LeagueSummary; team: FantasyTeamSummary; participation?: LeagueParticipation; squad?: InitialSquad; section: LeagueAreaSection; onSectionChange: (section: LeagueAreaSection) => void; onBack: () => void; marketPlayers: MarketPlayer[]; marketRules: MarketRules; backendMarketEnabled: boolean; rankingRows: NexoLeagueRankingRow[]; privateRules?: PrivateLeagueRules; canManagePrivateLeague: boolean; privateAdmin?: PrivateLeagueParticipant; privateParticipants: PrivateLeagueParticipant[]; onManagePrivateLeague: () => void; reports: LeagueReport[]; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeaveLeague: (successorId?: string) => Promise<string | null>; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; fixtures: MatchFixture[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; fantasyEvent?: FantasyEvent; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => Promise<void> | void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; notify: (message: string) => void }) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const starters = squad?.players.filter((player) => squad.startingPlayerIds.includes(player.id)) ?? [];
   const ownedMarketListings = (squad?.players ?? []).flatMap((player) => {
@@ -5582,7 +5585,7 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
       {section === "equipo" && (!fantasyEvent || fantasyEvent.snapshot) && <LeagueSquadView squad={squad} starters={starters} league={league} marketPlayers={fantasyScopedPlayers} fixtures={fixtures} participationId={participation?.id ?? ""} budget={participation?.budget ?? 0} fantasyMatchdayBudget={fantasyEvent?.snapshot?.budget ?? marketRules.fantasyMatchdayBudget} fantasyOptions={marketRules} fantasyEvent={fantasyEvent} scoringRules={scoringRules} fantasyLineup={fantasyLineup} previousFantasyLineup={previousFantasyLineup} onSaveFantasyLineup={onSaveFantasyLineup} playerContracts={playerContracts} playerOffers={playerOffers} onChangePlayerContract={onChangePlayerContract} onCreatePlayerOffer={onCreatePlayerOffer} onRespondPlayerOffer={onRespondPlayerOffer} onAdjustBudget={onAdjustBudget} onImmediateSale={onImmediateSale} notify={notify} />}
       {section === "mercado" && <LeagueMarketView league={league} players={fantasyScopedPlayers} squad={squad} budget={participation?.budget ?? 100} rules={marketRules} backendEnabled={backendMarketEnabled} bids={bids} onChangeBids={onChangeBids} ownedListings={ownedMarketListings} receivedOffers={receivedMarketOffers} onRespondOffer={onRespondPlayerOffer} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} onGenerateSystemOffers={() => ownedMarketListings.forEach(({ player }) => onCreatePlayerOffer(player, "game"))} notify={notify} />}
       {section === "jornada" && <LeagueMatchdayView squad={squad} competition={league.competition} fixtures={fixtures} scoringRules={scoringRules} settlementRules={settlementRules} onPrepareTeam={() => onSectionChange("equipo")} notify={notify} />}
-      {section === "clasificacion" && <LeagueRankingView team={team} competition={league.competition} budget={participation?.budget ?? 0} rules={marketRules} bidCommitment={bids.reduce((total, bid) => total + bid.amount, 0)} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={onClausePurchase} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} currentUserIsAdmin={canManagePrivateLeague} privateAdmin={privateAdmin} onReport={onReport} />}
+      {section === "clasificacion" && <LeagueRankingView team={team} competition={league.competition} rankingRows={rankingRows} backendEnabled={backendMarketEnabled} budget={participation?.budget ?? 0} rules={marketRules} bidCommitment={bids.reduce((total, bid) => total + bid.amount, 0)} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={onClausePurchase} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} currentUserIsAdmin={canManagePrivateLeague} privateAdmin={privateAdmin} onReport={onReport} />}
       {optionsOpen && <LeagueOptionsDialog league={league} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} isAdmin={canManagePrivateLeague} participants={privateParticipants} reports={reports} onManage={() => { setOptionsOpen(false); onManagePrivateLeague(); }} onResolveReport={onResolveReport} onLeave={onLeaveLeague} onClose={() => setOptionsOpen(false)} />}
     </>
   );
@@ -9203,6 +9206,7 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
 }
 type RivalTeam = {
   id: string;
+  teamId?: string;
   initials: string;
   name: string;
   manager: string;
@@ -9213,6 +9217,8 @@ type RivalTeam = {
   previousPosition: number;
   form: number[];
   rosterOffset: number;
+  isAdmin?: boolean;
+  roster?: InitialSquad;
 };
 
 const demoRivals: RivalTeam[] = [
@@ -9283,7 +9289,7 @@ function rivalRoster(competition: CompetitionName, offset: number) {
   });
 }
 
-function LeagueRankingView({ team, competition, budget, rules, bidCommitment, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, isPrivateLeague, currentUserIsAdmin, privateAdmin, onReport }: { team: FantasyTeamSummary; competition: CompetitionName; budget: number; rules: MarketRules; bidCommitment: number; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; isPrivateLeague: boolean; currentUserIsAdmin: boolean; privateAdmin?: PrivateLeagueParticipant; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null }) {
+function LeagueRankingView({ team, competition, rankingRows, backendEnabled, budget, rules, bidCommitment, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, isPrivateLeague, currentUserIsAdmin, privateAdmin, onReport }: { team: FantasyTeamSummary; competition: CompetitionName; rankingRows: NexoLeagueRankingRow[]; backendEnabled: boolean; budget: number; rules: MarketRules; bidCommitment: number; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; isPrivateLeague: boolean; currentUserIsAdmin: boolean; privateAdmin?: PrivateLeagueParticipant; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null }) {
   const [selectedRival, setSelectedRival] = useState<RivalTeam | null>(null);
   const privateAdminRival =
     isPrivateLeague && !currentUserIsAdmin
@@ -9293,7 +9299,7 @@ function LeagueRankingView({ team, competition, budget, rules, bidCommitment, se
           manager: privateAdmin?.userName ?? demoRivals[0].manager,
         }
       : demoRivals[0];
-  const ranking = [
+  const demoRanking = [
     privateAdminRival,
     demoRivals[1],
     {
@@ -9312,6 +9318,24 @@ function LeagueRankingView({ team, competition, budget, rules, bidCommitment, se
     demoRivals[2],
     demoRivals[3],
   ];
+  const ranking: RivalTeam[] = backendEnabled
+    ? rankingRows.map((row, index) => ({
+        id: row.membershipId,
+        teamId: row.teamId,
+        initials: row.teamShortName || row.initials,
+        name: row.teamName,
+        manager: row.managerName,
+        matchdayPoints: row.matchdayPoints,
+        totalPoints: row.totalPoints,
+        value: row.totalValue,
+        position: row.position,
+        previousPosition: row.position,
+        form: [],
+        rosterOffset: index,
+        isAdmin: row.role === "admin",
+        roster: row.squad,
+      }))
+    : demoRanking;
   const rankingHasPoints = ranking.some((item) => item.totalPoints > 0 || item.matchdayPoints > 0);
   function saveOffer(rival: RivalTeam, player: InitialSquadPlayer, amount: number): string | null {
     const now = Date.now();
@@ -9352,8 +9376,8 @@ function LeagueRankingView({ team, competition, budget, rules, bidCommitment, se
           <span>Total</span>
         </div>
         {ranking.map((item) => {
-          const mine = item.id === "my_team";
-          const isAdmin = isPrivateLeague && (currentUserIsAdmin ? mine : item.id === privateAdminRival.id);
+          const mine = backendEnabled ? item.teamId === team.id : item.id === "my_team";
+          const isAdmin = backendEnabled ? item.isAdmin : isPrivateLeague && (currentUserIsAdmin ? mine : item.id === privateAdminRival.id);
           return (
             <button className={`ranking-row ${mine ? "my-ranking" : ""}`} key={item.id} onClick={() => !mine && setSelectedRival(item)} disabled={mine}>
               <strong>{rankingHasPoints ? item.position : "—"}</strong>
@@ -9372,6 +9396,12 @@ function LeagueRankingView({ team, competition, budget, rules, bidCommitment, se
             </button>
           );
         })}
+        {backendEnabled && ranking.length === 0 && (
+          <div className="ranking-empty-state">
+            <strong>Clasificación pendiente</strong>
+            <span>Los participantes aparecerán al terminar de sincronizar la liga.</span>
+          </div>
+        )}
       </div>
       {selectedRival && <RivalTeamSheet rival={selectedRival} competition={competition} budget={budget} sentOffers={sentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={(player, clause, blind) => onClausePurchase(selectedRival.id, player, clause, blind)} onSaveOffer={(player, amount) => saveOffer(selectedRival, player, amount)} onReport={isPrivateLeague ? (category, details) => onReport(selectedRival, category, details) : undefined} onClose={() => setSelectedRival(null)} />}
     </section>
@@ -9383,14 +9413,16 @@ function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchase
   const [tab, setTab] = useState<"plantilla" | "trayectoria">("plantilla");
   const [offerPlayer, setOfferPlayer] = useState<InitialSquadPlayer | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
-  const roster = rivalRoster(competition, rival.rosterOffset).filter((player) => !clausePurchases.some((purchase) => purchase.playerId === player.id));
+  const roster = (rival.roster?.players ?? rivalRoster(competition, rival.rosterOffset)).filter((player) => !clausePurchases.some((purchase) => purchase.playerId === player.id));
   const startingQuotas: Record<PlayerPosition, number> = {
     POR: 1,
     DEF: 4,
     MED: 4,
     DEL: 2,
   };
-  const starters = (Object.keys(startingQuotas) as PlayerPosition[]).flatMap((position) => roster.filter((player) => player.position === position).slice(0, startingQuotas[position]));
+  const starters = rival.roster
+    ? roster.filter((player) => rival.roster?.startingPlayerIds.includes(player.id))
+    : (Object.keys(startingQuotas) as PlayerPosition[]).flatMap((position) => roster.filter((player) => player.position === position).slice(0, startingQuotas[position]));
   const bench = roster.filter((player) => !starters.some((starter) => starter.id === player.id));
   const captain = starters.find((player) => player.position === "DEL") ?? starters[0];
 

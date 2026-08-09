@@ -331,6 +331,7 @@ export const helpRules: HelpRule[] = [
     summary: "El ranking permite consultar los equipos rivales sin revelar decisiones todavía abiertas.",
     rules: [
       "Al tocar un rival en el ranking se muestran su posición, puntos, valor de plantilla y trayectoria pública.",
+      "El ranking se construye exclusivamente con las participaciones reales de esa liga; mientras no haya jornadas cerradas muestra cero puntos y ninguna posición consolidada.",
       "En el ranking de una liga privada, el equipo de la persona administradora aparece identificado con la insignia ADMIN.",
       "La plantilla vigente de 16 jugadores puede consultarse desde el perfil del rival.",
       "Desde la plantilla de un rival puedes seleccionar cualquiera de sus jugadores y enviarle una oferta directa privada.",

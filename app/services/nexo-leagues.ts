@@ -50,6 +50,30 @@ type PrivateAdminRow = {
   capacity: number;
 };
 
+export type NexoLeagueRankingRow = {
+  membershipId: string;
+  leagueId: string;
+  userId: string;
+  teamId: string;
+  teamName: string;
+  teamShortName: string;
+  managerName: string;
+  initials: string;
+  role: "admin" | "member";
+  totalPoints: number;
+  matchdayPoints: number;
+  totalValue: number;
+  position: number;
+  squad?: InitialSquad;
+};
+
+type RankingRow = {
+  membership_id: string; league_id: string; user_id: string; team_id: string;
+  team_name: string; team_short_name: string; manager_name: string; initials: string;
+  member_role: "admin" | "member"; total_points: number; matchday_points: number;
+  total_value: number; ranking_position: number; squad?: InitialSquad | null;
+};
+
 const competitionUiIds: Record<string, string> = {
   primera: "comp_primera",
   segunda: "comp_segunda",
@@ -66,22 +90,31 @@ function uiCompetitionId(id: string) {
   return competitionUiIds[id] ?? id;
 }
 
-export async function loadNexoLeagueState(): Promise<{ publicLeagues: PublicLeagueSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; adminLeagueIds: string[]; privateLeagueRules: Record<string, Record<string, unknown>>; squads: Record<string, InitialSquad> }> {
+export async function loadNexoLeagueState(): Promise<{ publicLeagues: PublicLeagueSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; adminLeagueIds: string[]; privateLeagueRules: Record<string, Record<string, unknown>>; rankings: Record<string, NexoLeagueRankingRow[]>; squads: Record<string, InitialSquad> }> {
   const client = requireClient();
-  const [{ data: directory, error: directoryError }, { data: memberships, error: membershipsError }, { data: rosters, error: rostersError }, { data: privateAdmin, error: privateAdminError }] = await Promise.all([
+  const [{ data: directory, error: directoryError }, { data: memberships, error: membershipsError }, { data: rosters, error: rostersError }, { data: privateAdmin, error: privateAdminError }, { data: rankings, error: rankingsError }] = await Promise.all([
     client.rpc("league_directory"),
     client.rpc("my_league_memberships"),
     client.rpc("my_market_rosters"),
     client.rpc("my_private_league_admin_details"),
+    client.rpc("my_league_rankings"),
   ]);
   if (directoryError) throw directoryError;
   if (membershipsError) throw membershipsError;
   if (rostersError) throw rostersError;
   if (privateAdminError) throw privateAdminError;
+  if (rankingsError) throw rankingsError;
   const rows = (directory ?? []) as DirectoryRow[];
   const mine = (memberships ?? []) as MembershipRow[];
   const myRosters = (rosters ?? []) as RosterRow[];
   const privateAdminRows = (privateAdmin ?? []) as PrivateAdminRow[];
+  const rankingRows = ((rankings ?? []) as RankingRow[]).map((row): NexoLeagueRankingRow => ({
+    membershipId: row.membership_id, leagueId: row.league_id, userId: row.user_id,
+    teamId: row.team_id, teamName: row.team_name, teamShortName: row.team_short_name,
+    managerName: row.manager_name, initials: row.initials, role: row.member_role,
+    totalPoints: Number(row.total_points), matchdayPoints: Number(row.matchday_points),
+    totalValue: Number(row.total_value), position: Number(row.ranking_position), squad: row.squad ?? undefined,
+  }));
   const rosterByMembership = new Map(myRosters.map((row) => [row.membership_id, row]));
   return {
     publicLeagues: rows.filter((row) => row.visibility === "public").map((row) => ({
@@ -125,6 +158,7 @@ export async function loadNexoLeagueState(): Promise<{ publicLeagues: PublicLeag
       version: Number(row.rules.version ?? 1),
       updatedAt: Date.now(),
     }])),
+    rankings: Object.fromEntries([...new Set(rankingRows.map((row) => row.leagueId))].map((leagueId) => [leagueId, rankingRows.filter((row) => row.leagueId === leagueId)])),
     squads: Object.fromEntries(myRosters.map((row) => [row.membership_id, row.squad])),
   };
 }
