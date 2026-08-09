@@ -668,3 +668,87 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(127, 183, 31
 @media (max-width: 520px) { .pwa-install-card,.pwa-update-card { right: 10px; bottom: max(10px,env(safe-area-inset-bottom)); left: 10px; width: auto; grid-template-columns: 42px 1fr; }.pwa-install-card > span,.pwa-update-card > span { width: 40px; height: 44px; }.pwa-install-button,.pwa-update-card > button { grid-column: 2; width: 100%; }.pwa-install-close { top: 3px; right: 3px; } }
 
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; animation: none !important; } }
+
+/* Mobile auth keeps the product story visible instead of dropping the desktop half. */
+.auth-page { width: 100%; overflow-x: clip; }
+.auth-story,.auth-panel { min-width: 0; }
+
+@media (max-width: 880px) {
+  .auth-page { display: block; }
+  .auth-story {
+    min-height: 0;
+    padding: 24px 22px 20px;
+    display: flex;
+  }
+  .auth-story::after { right: -170px; bottom: -230px; }
+  .auth-story > div { margin: 34px 0 20px; }
+  .auth-story h1 {
+    max-width: 540px;
+    margin: 6px 0 12px;
+    font-size: clamp(36px,9vw,54px);
+    line-height: .94;
+  }
+  .auth-story > div > p:last-child { max-width: 480px; font-size: 11px; }
+  .auth-story > section { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .auth-story > section article { min-height: 78px; padding: 10px; }
+  .auth-story > footer { display: none; }
+  .auth-panel {
+    width: min(100%,600px);
+    min-height: 0;
+    padding: 38px 28px max(100px,calc(54px + env(safe-area-inset-bottom)));
+  }
+  .auth-mobile-brand { display: none; }
+}
+
+@media (max-width: 560px) {
+  .auth-story { padding: 20px 16px 16px; }
+  .auth-story .brand-mark { width: 34px; height: 34px; font-size: 19px; }
+  .auth-story .brand-copy strong { font-size: 17px; }
+  .auth-story .brand-copy small { font-size: 6px; }
+  .auth-story > div { margin: 27px 0 16px; }
+  .auth-story h1 { max-width: 360px; font-size: clamp(34px,10.7vw,46px); }
+  .auth-story > div > p:last-child { max-width: 355px; font-size: 10px; }
+  .auth-story > section { gap: 6px; }
+  .auth-story > section article {
+    min-height: 62px;
+    padding: 8px 6px;
+    grid-template-columns: 28px minmax(0,1fr);
+    gap: 6px;
+  }
+  .auth-story > section article > span { width: 28px; height: 31px; }
+  .auth-story > section strong { font-size: 7px; line-height: 1.25; }
+  .auth-story > section small { display: none; }
+  .auth-panel { padding: 31px 16px max(96px,calc(48px + env(safe-area-inset-bottom))); }
+  .auth-heading h2 { font-size: 36px; }
+}
+
+/* The install invitation starts descriptive, then becomes a quiet shortcut. */
+.pwa-install-card { transition: width .3s ease,padding .3s ease,border-radius .3s ease,transform .3s ease; }
+.pwa-install-compact .pwa-install-card {
+  width: 178px;
+  padding: 8px;
+  grid-template-columns: 34px 1fr;
+  gap: 8px;
+  border-radius: 13px;
+}
+.pwa-install-compact .pwa-install-card > span { width: 32px; height: 35px; border-radius: 10px 4px 10px 4px; font-size: 13px; }
+.pwa-install-compact .pwa-install-card small,
+.pwa-install-compact .pwa-install-card p { display: none; }
+.pwa-install-compact .pwa-install-card strong { margin: 0; padding-right: 14px; font-size: 8px; }
+.pwa-install-compact .pwa-install-card .pwa-install-button {
+  min-height: 28px;
+  padding: 0 8px;
+  grid-column: 2;
+  width: 100%;
+  border-radius: 7px;
+  font-size: 6px;
+}
+.pwa-install-compact .pwa-install-close { top: 1px; right: 1px; width: 20px; height: 20px; font-size: 12px; }
+
+@media (max-width: 520px) {
+  .pwa-install-compact .pwa-install-card {
+    right: 10px;
+    left: auto;
+    width: 166px;
+  }
+}

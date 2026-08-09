@@ -14,6 +14,7 @@ export function PwaManager() {
   const [updateWorker, setUpdateWorker] = useState<ServiceWorker | null>(null);
   const [offline, setOffline] = useState(false);
   const [dismissed, setDismissed] = useState(true);
+  const [installCompact, setInstallCompact] = useState(false);
 
   useEffect(() => {
     const standalone = window.matchMedia("(display-mode: standalone)").matches || (window.navigator as Navigator & { standalone?: boolean }).standalone;
@@ -61,6 +62,17 @@ export function PwaManager() {
       window.removeEventListener("offline", onOffline);
     };
   }, []);
+
+  useEffect(() => {
+    if (dismissed || (!installPrompt && !showIosHelp)) return;
+    const timer = window.setTimeout(() => setInstallCompact(true), 6000);
+    return () => window.clearTimeout(timer);
+  }, [dismissed, installPrompt, showIosHelp]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("pwa-install-compact", installCompact);
+    return () => document.documentElement.classList.remove("pwa-install-compact");
+  }, [installCompact]);
 
   function dismiss() {
     window.localStorage.setItem("nexo_pwa_install_dismissed", "1");
