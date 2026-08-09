@@ -38,6 +38,12 @@ const competitionNames: Record<string, CompetitionName> = {
   liga_f: "Liga F",
 };
 
+const competitionUiIds: Record<string, string> = {
+  primera: "comp_primera",
+  segunda: "comp_segunda",
+  liga_f: "comp_liga_f",
+};
+
 function requireClient() {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase todavía no está configurado en este entorno.");
@@ -72,7 +78,7 @@ export async function loadNexoIdentity(): Promise<NexoIdentity | null> {
       id: team.id,
       name: team.name,
       shortName: team.short_name,
-      competitionId: team.competition_id,
+      competitionId: competitionUiIds[team.competition_id] ?? team.competition_id,
       competition: competitionNames[team.competition_id] ?? "Primera",
     })),
   };
@@ -143,6 +149,5 @@ export async function createNexoTeam(input: { clubId: string; name: string; shor
     short_name: input.shortName,
   }).select("id,name,short_name,competition_id").single();
   if (error) throw error;
-  return { id: data.id, name: data.name, shortName: data.short_name, competitionId: data.competition_id, competition: input.competition };
+  return { id: data.id, name: data.name, shortName: data.short_name, competitionId: competitionUiIds[data.competition_id] ?? data.competition_id, competition: input.competition };
 }
-

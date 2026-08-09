@@ -25,6 +25,7 @@ import { defaultMarketValueConfig, type MarketValueConfig } from "./domain/marke
 import { calculatePlayerPoints, defaultScoringRules, demoPlayerMatchStats, type ScoringRule } from "./domain/scoring";
 import { createDemoAllocationGateway } from "./services/initial-squad-allocation";
 import { acceptNexoLegalDocuments, completeNexoOnboarding, createNexoTeam, loadNexoIdentity, registerInNexo, sendNexoPasswordReset, signInToNexo, signOutFromNexo, type NexoIdentity, type NexoRegistration } from "./services/nexo-auth";
+import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, reserveNexoLeaguePlace } from "./services/nexo-leagues";
 import { withBasePath } from "./base-path";
 
 type Section = "inicio" | "equipo" | "tendencias" | "ligas" | "liga" | "perfil" | "ayuda" | "admin";
@@ -267,6 +268,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
   const [active, setActive] = useState<Section>("inicio");
   const [competition, setCompetition] = useState<CompetitionName>(initialData.competitions[0].name);
   const [teams, setTeams] = useState(initialData.teams);
+  const [availablePublicLeagues, setAvailablePublicLeagues] = useState(initialData.publicLeagues);
   const [leagues, setLeagues] = useState(initialData.leagues);
   const [participations, setParticipations] = useState(initialData.participations);
   const [initialSquads, setInitialSquads] = useState<Record<string, InitialSquad>>(() => createSeededSquads(initialData));
@@ -428,6 +430,17 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       setCompetition(identity.teams[0].competition);
     }
     try { window.localStorage.setItem("nexo_onboarding_seen_version", String(identity.onboardingVersion)); } catch { /* Preferencia local opcional. */ }
+    void refreshBackendLeagues();
+  }
+
+  async function refreshBackendLeagues() {
+    try {
+      const state = await loadNexoLeagueState();
+      setAvailablePublicLeagues(state.publicLeagues);
+      setLeagues(state.leagues);
+      setParticipations(state.participations);
+      setPrivateLeagueAdminIds(state.adminLeagueIds);
+    } catch { /* La pantalla puede seguir usando los datos de demostración si la red falla. */ }
   }
 
   async function loginWithBackend(email: string, password: string) {
@@ -591,11 +604,15 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     notify(resolution === "expelled" ? "Resolución guardada · usuario expulsado" : resolution === "warning" ? "Resolución guardada · advertencia enviada" : "Denuncia archivada sin sanción");
   }
 
-  function leaveLeague(leagueId: string, successorId?: string) {
+  async function leaveLeague(leagueId: string, successorId?: string): Promise<string | null> {
     const participation = participations.find((item) => item.leagueId === leagueId);
     const invite = privateLeagueInvites.find((item) => item.league.id === leagueId);
     const isAdmin = privateLeagueAdminIds.includes(leagueId);
     if (isAdmin && invite && invite.participants.length > 1 && !successorId) return "Selecciona quién será el nuevo administrador.";
+    if (sessionUser?.email !== "demo@nexo.es") {
+      try { await leaveNexoLeague(leagueId, successorId); }
+      catch (failure) { return failure instanceof Error ? failure.message : "No se ha podido abandonar la liga."; }
+    }
     if (invite) {
       if (isAdmin && invite.participants.length === 1) {
         setPrivateLeagueInvites((current) => current.filter((item) => item.league.id !== leagueId));
@@ -710,17 +727,26 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     navigate("liga");
   }
 
-  function createPrivateLeague(input: CreatePrivateLeagueInput): { error?: string; leagueId?: string; accessCode?: string } {
+  async function createPrivateLeague(input: CreatePrivateLeagueInput): Promise<{ error?: string; leagueId?: string; accessCode?: string }> {
     const name = input.name.trim();
     const selectedTeam = teams.find((item) => item.id === input.teamId);
     if (selectedTeam && activeTeamCountForClub(selectedTeam.id) >= clubRules.maxActiveTeams) return { error: `Este club ya tiene ${clubRules.maxActiveTeams} equipos activos. Libera una plaza o utiliza otro club.` };
     if (name.length < 3 || name.length > 30) return { error: "El nombre debe tener entre 3 y 30 caracteres." };
     if (leagues.some((item) => item.name.toLocaleLowerCase("es") === name.toLocaleLowerCase("es"))) return { error: "Ya existe una liga con ese nombre." };
     if (!selectedTeam || selectedTeam.competition !== input.competition) return { error: "Selecciona un equipo de la misma competición." };
-    const leagueId = `private_local_${crypto.randomUUID()}`;
-    const participationId = `entry_local_${crypto.randomUUID()}`;
+    let leagueId = `private_local_${crypto.randomUUID()}`;
+    let participationId = `entry_local_${crypto.randomUUID()}`;
     let accessCode = "";
-    do { accessCode = `NX-${Math.random().toString(36).slice(2, 6).toUpperCase()}`; } while (Object.values(privateLeagueRules).some((rules) => rules.accessCode === accessCode));
+    if (sessionUser?.email !== "demo@nexo.es") {
+      try {
+        const created = await createNexoPrivateLeague({ name, teamId: selectedTeam.id, capacity: input.rules.capacity, rules: input.rules });
+        leagueId = created.leagueId;
+        participationId = created.membershipId;
+        accessCode = created.accessCode;
+      } catch (failure) { return { error: failure instanceof Error ? failure.message : "No se ha podido crear la liga." }; }
+    } else {
+      do { accessCode = `NX-${Math.random().toString(36).slice(2, 6).toUpperCase()}`; } while (Object.values(privateLeagueRules).some((rules) => rules.accessCode === accessCode));
+    }
     const rules: PrivateLeagueRules = { ...input.rules, accessCode, version: 1, updatedAt: Date.now() };
     const league: LeagueSummary = { id: leagueId, name, competitionId: selectedTeam.competitionId, competition: input.competition, mode: "market", rosterPolicy: "exclusive", type: "Privada · Mercado", rank: "1.º", members: `1/${rules.capacity}`, accent: "lime" };
     const participation: LeagueParticipation = { id: participationId, leagueId, teamId: selectedTeam.id, rosterId: `roster_local_${crypto.randomUUID()}`, budget: rules.startingBudget };
@@ -729,7 +755,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     setInitialSquads((current) => ({ ...current, [participationId]: createLocalSquad(input.competition, rules.initialSquadSize) }));
     setPrivateLeagueRules((current) => ({ ...current, [leagueId]: rules }));
     setPrivateLeagueAdminIds((current) => [...current, leagueId]);
-    setPrivateLeagueInvites((current) => [...current, { league, rules, participants: [{ id: initialData.user.id, initials: initialData.user.initials, userName: initialData.user.displayName, teamName: selectedTeam.name, role: "admin" }], activeReservations: 0 }]);
+    setPrivateLeagueInvites((current) => [...current, { league, rules, participants: [{ id: participationId, initials: sessionUser?.initials ?? initialData.user.initials, userName: sessionUser?.displayName ?? initialData.user.displayName, teamName: selectedTeam.name, role: "admin" }], activeReservations: 0 }]);
     setTeamId(selectedTeam.id);
     setCompetition(input.competition);
     notify("Liga privada creada · ya puedes compartir el código");
@@ -753,12 +779,26 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     return accessCode;
   }
 
-  function findPrivateLeagueByCode(code: string) {
+  async function findPrivateLeagueByCode(code: string) {
     const normalized = code.trim().toUpperCase();
     if (!normalized) { notify("Introduce un código de liga"); return; }
     const invite = privateLeagueInvites.find((item) => item.rules.accessCode === normalized);
-    if (!invite) { notify("No existe ninguna liga activa con ese código"); return; }
-    setPrivateJoinInvite(invite);
+    if (invite) { setPrivateJoinInvite(invite); return; }
+    if (sessionUser?.email === "demo@nexo.es") { notify("No existe ninguna liga activa con ese código"); return; }
+    try {
+      const result = await previewNexoPrivateLeague(normalized);
+      if (!result) { notify("No existe ninguna liga activa con ese código"); return; }
+      const participantRows = Array.isArray(result.rules?._participants) ? result.rules._participants : [];
+      const backendRules: PrivateLeagueRules = { ...defaultPrivateLeagueRules, ...result.rules, accessCode: normalized, capacity: result.capacity, startingBudget: Number(result.starting_budget), joinLocked: result.join_locked, version: 1, updatedAt: Date.now() };
+      const backendInvite: PrivateLeagueInvite = {
+        league: { id: result.id, name: result.name, competitionId: result.competition_id === "primera" ? "comp_primera" : result.competition_id === "segunda" ? "comp_segunda" : "comp_liga_f", competition: result.competition_name, mode: result.mode, rosterPolicy: result.roster_policy, type: "Privada · Mercado", rank: "—", members: `${result.member_count}/${result.capacity}`, accent: result.accent },
+        rules: backendRules,
+        participants: participantRows.map((participant) => ({ id: participant.id, initials: participant.initials, userName: participant.userName, teamName: participant.teamName, role: participant.role })),
+        activeReservations: 0,
+      };
+      setPrivateLeagueInvites((current) => [...current.filter((item) => item.league.id !== backendInvite.league.id), backendInvite]);
+      setPrivateJoinInvite(backendInvite);
+    } catch { notify("No se ha podido comprobar el código. Inténtalo de nuevo."); }
   }
 
   async function joinPrivateLeague(invite: PrivateLeagueInvite, selectedTeamId: string): Promise<string | null> {
@@ -768,17 +808,31 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     if (availablePrivateLeagueSlots(invite) <= 0) return "La última plaza acaba de ocuparse o está reservada por otro usuario.";
     if (participations.some((item) => item.leagueId === invite.league.id)) return "Ya participas en esta liga.";
     if (!selectedTeam || selectedTeam.competition !== invite.league.competition) return "Selecciona un equipo de la misma competición.";
-    // En producción esta reserva será una escritura condicional y atómica en BBDD.
+    let backendReservationId: string | null = null;
+    if (sessionUser?.email !== "demo@nexo.es") {
+      try { backendReservationId = await reserveNexoLeaguePlace(invite.league.id, invite.rules.accessCode); }
+      catch (failure) { return failure instanceof Error ? failure.message : "No se ha podido reservar la plaza."; }
+    }
     setPrivateLeagueInvites((current) => current.map((item) => item.league.id === invite.league.id ? { ...item, activeReservations: item.activeReservations + 1 } : item));
     const assignedIds = new Set(participations.filter((item) => item.leagueId === invite.league.id).flatMap((item) => initialSquads[item.id]?.players.map((player) => player.id) ?? []));
     let allocatedSquad: InitialSquad;
     try {
       allocatedSquad = (await createDemoAllocationGateway(assignedIds).allocate({ leagueId: invite.league.id, teamId: selectedTeam.id, competition: invite.league.competition, targetValue: createLocalSquad(invite.league.competition, invite.rules.initialSquadSize).totalValue, squadSize: invite.rules.initialSquadSize, idempotencyKey: crypto.randomUUID() })).squad;
     } catch {
+      if (backendReservationId) await cancelNexoLeagueReservation(backendReservationId);
       setPrivateLeagueInvites((current) => current.map((item) => item.league.id === invite.league.id ? { ...item, activeReservations: Math.max(0, item.activeReservations - 1) } : item));
       return "No quedan suficientes jugadores exclusivos para entregar una plantilla válida. La plaza reservada se ha liberado.";
     }
-    const participation: LeagueParticipation = { id: `entry_local_${crypto.randomUUID()}`, leagueId: invite.league.id, teamId: selectedTeam.id, rosterId: `roster_local_${crypto.randomUUID()}`, budget: invite.rules.startingBudget };
+    let backendMembershipId: string | null = null;
+    if (backendReservationId) {
+      try { backendMembershipId = await confirmNexoLeagueJoin(backendReservationId, selectedTeam.id); }
+      catch (failure) {
+        await cancelNexoLeagueReservation(backendReservationId);
+        setPrivateLeagueInvites((current) => current.map((item) => item.league.id === invite.league.id ? { ...item, activeReservations: Math.max(0, item.activeReservations - 1) } : item));
+        return failure instanceof Error ? failure.message : "La plaza reservada ya no está disponible.";
+      }
+    }
+    const participation: LeagueParticipation = { id: backendMembershipId ?? `entry_local_${crypto.randomUUID()}`, leagueId: invite.league.id, teamId: selectedTeam.id, rosterId: `roster_local_${crypto.randomUUID()}`, budget: invite.rules.startingBudget };
     const nextParticipants: PrivateLeagueParticipant[] = [...invite.participants, { id: initialData.user.id, initials: initialData.user.initials, userName: initialData.user.displayName, teamName: selectedTeam.name, role: "member" }];
     const joinedLeague = { ...invite.league, rank: "—", members: `${nextParticipants.length}/${invite.rules.capacity}` };
     setParticipations((current) => [...current, participation]);
@@ -852,7 +906,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
   }
 
   async function joinPublicLeague(leagueId: string, selectedTeamId: string): Promise<string | null> {
-    const publicLeague = [...initialData.publicLeagues, ...fantasyEventLeagues].find((item) => item.id === leagueId);
+    const publicLeague = [...availablePublicLeagues, ...fantasyEventLeagues].find((item) => item.id === leagueId);
     const fantasyEvent = fantasyEvents.find((event) => event.id === leagueId);
     const selectedTeam = teams.find((item) => item.id === selectedTeamId);
     const consumesClubSlot = !(fantasyEvent?.format === "partidazo" && !clubRules.singleMatchEventsConsumeSlot);
@@ -862,6 +916,13 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     if (participations.some((item) => item.leagueId === leagueId)) return "Ya participas en esta liga.";
     if (publicLeague.memberCount >= publicLeague.capacity) return "Esta liga ya está completa.";
 
+    let reservationId: string | null = null;
+    const persistentLeague = availablePublicLeagues.some((league) => league.id === leagueId) && sessionUser?.email !== "demo@nexo.es";
+    if (persistentLeague) {
+      try { reservationId = await reserveNexoLeaguePlace(leagueId); }
+      catch (failure) { return failure instanceof Error ? failure.message : "No se ha podido reservar la plaza."; }
+    }
+
     let allocatedSquad: InitialSquad = { formation: "4-4-2", players: [], startingPlayerIds: [], benchPlayerIds: [], totalValue: 0, targetValue: 0 };
     if (publicLeague.mode === "market") {
       const sameLeagueParticipationIds = participations.filter((item) => item.leagueId === leagueId).map((item) => item.id);
@@ -870,12 +931,22 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
         const confirmedAllocation = await createDemoAllocationGateway(assignedPlayerIds).allocate({ leagueId, teamId: selectedTeamId, competition: publicLeague.competition, targetValue: publicLeague.targetSquadValue, idempotencyKey: crypto.randomUUID() });
         allocatedSquad = confirmedAllocation.squad;
       } catch {
+        if (reservationId) await cancelNexoLeagueReservation(reservationId);
         return "No quedan suficientes jugadores para formar una plantilla equilibrada.";
       }
     }
 
+    let persistentMembershipId: string | null = null;
+    if (reservationId) {
+      try { persistentMembershipId = await confirmNexoLeagueJoin(reservationId, selectedTeamId); }
+      catch (failure) {
+        await cancelNexoLeagueReservation(reservationId);
+        return failure instanceof Error ? failure.message : "La plaza ya no está disponible.";
+      }
+    }
+
     const participation: LeagueParticipation = {
-      id: `entry_local_${crypto.randomUUID()}`,
+      id: persistentMembershipId ?? `entry_local_${crypto.randomUUID()}`,
       leagueId,
       teamId: selectedTeamId,
       rosterId: `roster_local_${crypto.randomUUID()}`,
@@ -897,6 +968,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     setParticipations((current) => [...current, participation]);
     setInitialSquads((current) => ({ ...current, [participation.id]: allocatedSquad }));
     setLeagues((current) => [...current, joinedLeague]);
+    if (persistentLeague) setAvailablePublicLeagues((current) => current.map((league) => league.id === leagueId ? { ...league, memberCount: league.memberCount + 1 } : league));
     if (fantasyEvent) setFantasyEvents((current) => current.map((event) => event.id === fantasyEvent.id ? { ...event, memberCount: event.memberCount + 1 } : event));
     setTeamId(selectedTeamId);
     setCompetition(publicLeague.competition);
@@ -1044,7 +1116,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
           mode="market"
           competitions={initialData.competitions}
           teams={teams}
-          publicLeagues={initialData.publicLeagues}
+          publicLeagues={availablePublicLeagues.filter((league) => league.mode === "market")}
           participations={participations}
           clubRules={clubRules}
           onClose={() => setPublicJoinOpen(false)}
@@ -1053,7 +1125,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
         />
       )}
       {fantasyJoinOpen && (
-        <JoinPublicLeagueDialog mode="fantasy" initialEventId={fantasyJoinEventId} competitions={initialData.competitions} teams={teams} publicLeagues={fantasyEventLeagues} fantasyEvents={fantasyEvents} participations={participations} clubRules={clubRules} onClose={() => { setFantasyJoinOpen(false); setFantasyJoinEventId(null); }} onNeedTeam={(competitionName) => createTeamFromJoin(competitionName, "fantasy", fantasyJoinEventId)} onJoin={joinPublicLeague} />
+        <JoinPublicLeagueDialog mode="fantasy" initialEventId={fantasyJoinEventId} competitions={initialData.competitions} teams={teams} publicLeagues={[...availablePublicLeagues.filter((league) => league.mode === "fantasy"), ...fantasyEventLeagues]} fantasyEvents={fantasyEvents} participations={participations} clubRules={clubRules} onClose={() => { setFantasyJoinOpen(false); setFantasyJoinEventId(null); }} onNeedTeam={(competitionName) => createTeamFromJoin(competitionName, "fantasy", fantasyJoinEventId)} onJoin={joinPublicLeague} />
       )}
       {privateLeagueCreatorOpen && <CreatePrivateLeagueDialog competitions={initialData.competitions} teams={teams} defaultCompetition={competition} onClose={() => setPrivateLeagueCreatorOpen(false)} onCreate={createPrivateLeague} onOpenLeague={(leagueId) => { setPrivateLeagueCreatorOpen(false); openLeague(leagueId); }} />}
       {privateJoinInvite && <JoinPrivateLeagueDialog invite={privateJoinInvite} teams={teams} participations={participations} clubRules={clubRules} alreadyJoined={participations.some((item) => item.leagueId === privateJoinInvite.league.id)} onClose={() => setPrivateJoinInvite(null)} onJoin={joinPrivateLeague} onOpenExisting={() => { setPrivateJoinInvite(null); openLeague(privateJoinInvite.league.id); }} />}
@@ -1106,7 +1178,7 @@ function createDemoPrivateInvites(): PrivateLeagueInvite[] {
   ];
 }
 
-function CreatePrivateLeagueDialog({ competitions, teams, defaultCompetition, onClose, onCreate, onOpenLeague }: { competitions: CompetitionSummary[]; teams: FantasyTeamSummary[]; defaultCompetition: CompetitionName; onClose: () => void; onCreate: (input: CreatePrivateLeagueInput) => { error?: string; leagueId?: string; accessCode?: string }; onOpenLeague: (leagueId: string) => void }) {
+function CreatePrivateLeagueDialog({ competitions, teams, defaultCompetition, onClose, onCreate, onOpenLeague }: { competitions: CompetitionSummary[]; teams: FantasyTeamSummary[]; defaultCompetition: CompetitionName; onClose: () => void; onCreate: (input: CreatePrivateLeagueInput) => Promise<{ error?: string; leagueId?: string; accessCode?: string }>; onOpenLeague: (leagueId: string) => void }) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
   const [competition, setCompetition] = useState(defaultCompetition);
@@ -1128,8 +1200,8 @@ function CreatePrivateLeagueDialog({ competitions, teams, defaultCompetition, on
     setStep((current) => Math.min(4, current + 1));
   }
 
-  function createLeague() {
-    const result = onCreate({ name, competition, teamId, rules });
+  async function createLeague() {
+    const result = await onCreate({ name, competition, teamId, rules });
     if (result.error || !result.leagueId || !result.accessCode) { setError(result.error ?? "No se ha podido crear la liga."); return; }
     setCreated({ leagueId: result.leagueId, accessCode: result.accessCode });
   }
@@ -1585,7 +1657,7 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
   reports: LeagueReport[];
   onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null;
   onResolveReport: (reportId: string, resolution: ReportResolution) => void;
-  onLeaveLeague: (successorId?: string) => string | null;
+  onLeaveLeague: (successorId?: string) => Promise<string | null>;
   bids: MarketBid[];
   onChangeBids: (bids: MarketBid[]) => void;
   playerContracts: Record<string, PlayerContract>;
@@ -2368,14 +2440,14 @@ function ReportUserDialog({ rival, onClose, onSubmit }: { rival: RivalTeam; onCl
   return <div className="dialog-backdrop report-dialog-backdrop" role="presentation"><section className="team-dialog report-user-dialog" role="dialog" aria-modal="true" aria-labelledby="report-user-title"><div className="dialog-header"><div><p className="eyebrow">DENUNCIA PRIVADA</p><h2 id="report-user-title">Denunciar a {rival.manager}</h2></div><button className="dialog-close" onClick={onClose} aria-label="Cerrar">×</button></div><p className="report-intro">El administrador de la liga revisará la denuncia y decidirá la resolución. El usuario denunciado no verá quién la ha enviado.</p><form onSubmit={submit}><label className="private-field"><span>Motivo</span><select value={category} onChange={(event) => setCategory(event.target.value as ReportCategory)}>{(Object.keys(reportCategoryLabels) as ReportCategory[]).map((value) => <option value={value} key={value}>{reportCategoryLabels[value]}</option>)}</select></label><label className="private-field"><span>Describe lo ocurrido</span><textarea value={details} maxLength={500} rows={5} placeholder="Incluye fechas, operaciones o comportamientos que ayuden a revisarlo…" onChange={(event) => { setDetails(event.target.value); setError(""); }} /><small>{details.length}/500</small></label><article className="report-privacy-note"><span>✓</span><div><strong>Revisión confidencial</strong><small>La denuncia no sanciona automáticamente. Queda registrada para que el administrador pueda advertir, archivar o expulsar.</small></div></article>{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button">Enviar denuncia</button></div></form></section></div>;
 }
 
-function LeagueOptionsDialog({ league, isPrivateLeague, isAdmin, participants, reports, onResolveReport, onLeave, onClose }: { league: LeagueSummary; isPrivateLeague: boolean; isAdmin: boolean; participants: PrivateLeagueParticipant[]; reports: LeagueReport[]; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeave: (successorId?: string) => string | null; onClose: () => void }) {
+function LeagueOptionsDialog({ league, isPrivateLeague, isAdmin, participants, reports, onResolveReport, onLeave, onClose }: { league: LeagueSummary; isPrivateLeague: boolean; isAdmin: boolean; participants: PrivateLeagueParticipant[]; reports: LeagueReport[]; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeave: (successorId?: string) => Promise<string | null>; onClose: () => void }) {
   const successors = participants.filter((participant) => participant.role !== "admin");
   const [successorId, setSuccessorId] = useState(successors[0]?.id ?? "");
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [error, setError] = useState("");
   const pendingReports = reports.filter((report) => report.status === "pending");
-  function leave() {
-    const result = onLeave(isPrivateLeague && isAdmin && successors.length ? successorId : undefined);
+  async function leave() {
+    const result = await onLeave(isPrivateLeague && isAdmin && successors.length ? successorId : undefined);
     if (result) { setError(result); return; }
     onClose();
   }
