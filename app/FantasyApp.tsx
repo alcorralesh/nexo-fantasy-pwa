@@ -5356,6 +5356,13 @@ function TrendPlayerRow({ player, rank }: { player: PlayerTrend; rank: number })
 }
 
 function LeaguesView({ leagues, featuredLeagueIds, onToggleFeaturedLeague, fantasyEvents, onOpenLeague, onJoinPublic, onJoinFantasy, onCreatePrivate, onJoinCode, joinCode, setJoinCode, notify }: { leagues: LeagueSummary[]; featuredLeagueIds: string[]; onToggleFeaturedLeague: (leagueId: string) => void; fantasyEvents: FantasyEvent[]; onOpenLeague: (leagueId: string) => void; onJoinPublic: () => void; onJoinFantasy: (eventId?: string) => void; onCreatePrivate: () => void; onJoinCode: (code: string) => void; joinCode: string; setJoinCode: (v: string) => void; notify: (v: string) => void }) {
+  const [fantasyDirectoryOpen, setFantasyDirectoryOpen] = useState(false);
+
+  function chooseFantasyEvent(eventId: string) {
+    setFantasyDirectoryOpen(false);
+    onJoinFantasy(eventId);
+  }
+
   return (
     <>
       <section className="page-heading">
@@ -5409,8 +5416,8 @@ function LeaguesView({ leagues, featuredLeagueIds, onToggleFeaturedLeague, fanta
             <h2>Elige tu reto</h2>
             <p>Un partido, varios encuentros o una competición de varias jornadas.</p>
           </div>
-          <button className="text-button" onClick={() => onJoinFantasy()}>
-            Ver todas →
+          <button className="text-button" onClick={() => setFantasyDirectoryOpen(true)}>
+            Ver todos los retos →
           </button>
         </div>
         <div className="fantasy-event-cards">
@@ -5435,6 +5442,49 @@ function LeaguesView({ leagues, featuredLeagueIds, onToggleFeaturedLeague, fanta
           ))}
         </div>
       </section>
+      {fantasyDirectoryOpen && (
+        <div className="dialog-backdrop" role="presentation">
+          <section className="team-dialog fantasy-directory-dialog" role="dialog" aria-modal="true" aria-labelledby="fantasy-directory-title">
+            <div className="dialog-header">
+              <div>
+                <p className="eyebrow">LIGAS FANTÁSTICAS</p>
+                <h2 id="fantasy-directory-title">Todos los retos</h2>
+                <p>{fantasyEvents.length} retos abiertos o anunciados</p>
+              </div>
+              <button className="dialog-close" onClick={() => setFantasyDirectoryOpen(false)} aria-label="Cerrar">
+                ×
+              </button>
+            </div>
+            <div className="fantasy-directory-list">
+              {fantasyEvents.map((event) => {
+                const fixtureSummary = event.fixtures
+                  .slice(0, 2)
+                  .map((fixture) => `${fixture.home}–${fixture.away}`)
+                  .join(" · ");
+                return (
+                  <button key={event.id} onClick={() => chooseFantasyEvent(event.id)}>
+                    <span className={event.featured ? "featured" : ""}>{event.format === "partidazo" ? "★" : event.format === "matches" ? "◆" : "J"}</span>
+                    <div>
+                      <small>{event.competition} · {event.format === "partidazo" ? "UN PARTIDO" : event.format === "matches" ? `${event.fixtures.length} PARTIDOS` : `${event.matchdays.length} JORNADAS`}</small>
+                      <strong>{event.name}</strong>
+                      <p>{fixtureSummary || `Jornadas ${event.matchdays.join(", ")}`}</p>
+                    </div>
+                    <b>
+                      {event.snapshot ? `${event.snapshot.budget.toFixed(1).replace(".", ",")} M` : `Pendiente hasta J${event.previousMatchday}`}
+                      <small>{event.memberCount}/{event.capacity} inscritos</small>
+                    </b>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="wizard-actions">
+              <button className="secondary-button" onClick={() => setFantasyDirectoryOpen(false)}>
+                Cerrar
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <section className="join-card">
         <div>
           <p className="eyebrow">¿TIENES UNA INVITACIÓN?</p>
