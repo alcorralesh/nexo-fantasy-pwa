@@ -10,7 +10,7 @@ import { defaultMarketValueConfig, type MarketValueConfig } from "./domain/marke
 import { calculatePlayerPoints, defaultScoringRules, demoPlayerMatchStats, type ScoringRule } from "./domain/scoring";
 import { createDemoAllocationGateway } from "./services/initial-squad-allocation";
 import { acceptNexoLegalDocuments, completeNexoOnboarding, createNexoTeam, loadNexoIdentity, registerInNexo, sendNexoPasswordReset, signInToNexo, signOutFromNexo, type NexoIdentity, type NexoRegistration } from "./services/nexo-auth";
-import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, reserveNexoLeaguePlace, updateNexoPrivateLeague } from "./services/nexo-leagues";
+import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, regenerateNexoPrivateLeagueCode, reserveNexoLeaguePlace, updateNexoPrivateLeague } from "./services/nexo-leagues";
 import { cancelNexoMarketBid, forceNexoMarketRenewal, loadNexoLeagueMarket, placeNexoMarketBid, type NexoLeagueMarket } from "./services/nexo-market";
 import { loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, runNexoPlayerCatalogSync, updateNexoPlayer, type CatalogSyncJob, type CatalogSyncResult } from "./services/nexo-players";
 import { loadNexoCalendarSyncHistory, loadNexoMatchCalendar, runNexoCalendarSync, type CalendarSyncJob, type CalendarSyncResult, type MatchFixture } from "./services/nexo-calendar";
@@ -1700,6 +1700,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       setLeagues(state.leagues);
       setParticipations(state.participations);
       setPrivateLeagueAdminIds(state.adminLeagueIds);
+      setPrivateLeagueRules(state.privateLeagueRules as Record<string, PrivateLeagueRules>);
       setInitialSquads((current) => ({ ...current, ...state.squads }));
     } catch {
       /* La pantalla puede seguir usando los datos de demostración si la red falla. */
@@ -2470,11 +2471,20 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     return true;
   }
 
-  function regeneratePrivateLeagueCode(leagueId: string): string {
+  async function regeneratePrivateLeagueCode(leagueId: string): Promise<string> {
     let accessCode = "";
-    do {
-      accessCode = `NX-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-    } while (Object.values(privateLeagueRules).some((rules) => rules.accessCode === accessCode));
+    if (sessionUser?.id !== "demo_user") {
+      try {
+        accessCode = await regenerateNexoPrivateLeagueCode(leagueId);
+      } catch (failure) {
+        notify(failure instanceof Error ? failure.message : "No se ha podido regenerar el código");
+        return privateLeagueRules[leagueId]?.accessCode ?? "";
+      }
+    } else {
+      do {
+        accessCode = `NX-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      } while (Object.values(privateLeagueRules).some((rules) => rules.accessCode === accessCode));
+    }
     setPrivateLeagueRules((current) =>
       current[leagueId]
         ? {
@@ -3978,7 +3988,7 @@ function PrivateOperationRules({ rules, onChange }: { rules: Omit<PrivateLeagueR
   );
 }
 
-function ManagePrivateLeagueDialog({ league, rules, onClose, onSave, onRegenerateCode }: { league: LeagueSummary; rules: PrivateLeagueRules; onClose: () => void; onSave: (name: string, rules: PrivateLeagueRules) => Promise<void> | void; onRegenerateCode: () => string }) {
+function ManagePrivateLeagueDialog({ league, rules, onClose, onSave, onRegenerateCode }: { league: LeagueSummary; rules: PrivateLeagueRules; onClose: () => void; onSave: (name: string, rules: PrivateLeagueRules) => Promise<void> | void; onRegenerateCode: () => Promise<string> | string }) {
   const [name, setName] = useState(league.name);
   const [draft, setDraft] = useState({ ...rules });
   const [tab, setTab] = useState<"access" | "market" | "operations">("access");
@@ -4018,8 +4028,9 @@ function ManagePrivateLeagueDialog({ league, rules, onClose, onSave, onRegenerat
                 <strong>{draft.accessCode}</strong>
               </div>
               <button
-                onClick={() => {
-                  const accessCode = onRegenerateCode();
+                onClick={async () => {
+                  const accessCode = await onRegenerateCode();
+                  if (!accessCode) return;
                   setDraft({
                     ...draft,
                     accessCode,
@@ -5572,7 +5583,7 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
       {section === "mercado" && <LeagueMarketView league={league} players={fantasyScopedPlayers} squad={squad} budget={participation?.budget ?? 100} rules={marketRules} backendEnabled={backendMarketEnabled} bids={bids} onChangeBids={onChangeBids} ownedListings={ownedMarketListings} receivedOffers={receivedMarketOffers} onRespondOffer={onRespondPlayerOffer} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} onGenerateSystemOffers={() => ownedMarketListings.forEach(({ player }) => onCreatePlayerOffer(player, "game"))} notify={notify} />}
       {section === "jornada" && <LeagueMatchdayView squad={squad} competition={league.competition} fixtures={fixtures} scoringRules={scoringRules} settlementRules={settlementRules} onPrepareTeam={() => onSectionChange("equipo")} notify={notify} />}
       {section === "clasificacion" && <LeagueRankingView team={team} competition={league.competition} budget={participation?.budget ?? 0} rules={marketRules} bidCommitment={bids.reduce((total, bid) => total + bid.amount, 0)} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={onClausePurchase} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} currentUserIsAdmin={canManagePrivateLeague} privateAdmin={privateAdmin} onReport={onReport} />}
-      {optionsOpen && <LeagueOptionsDialog league={league} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} isAdmin={canManagePrivateLeague} participants={privateParticipants} reports={reports} onResolveReport={onResolveReport} onLeave={onLeaveLeague} onClose={() => setOptionsOpen(false)} />}
+      {optionsOpen && <LeagueOptionsDialog league={league} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} isAdmin={canManagePrivateLeague} participants={privateParticipants} reports={reports} onManage={() => { setOptionsOpen(false); onManagePrivateLeague(); }} onResolveReport={onResolveReport} onLeave={onLeaveLeague} onClose={() => setOptionsOpen(false)} />}
     </>
   );
 }
@@ -9695,7 +9706,7 @@ function ReportUserDialog({ rival, onClose, onSubmit }: { rival: RivalTeam; onCl
   );
 }
 
-function LeagueOptionsDialog({ league, isPrivateLeague, isAdmin, participants, reports, onResolveReport, onLeave, onClose }: { league: LeagueSummary; isPrivateLeague: boolean; isAdmin: boolean; participants: PrivateLeagueParticipant[]; reports: LeagueReport[]; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeave: (successorId?: string) => Promise<string | null>; onClose: () => void }) {
+function LeagueOptionsDialog({ league, isPrivateLeague, isAdmin, participants, reports, onManage, onResolveReport, onLeave, onClose }: { league: LeagueSummary; isPrivateLeague: boolean; isAdmin: boolean; participants: PrivateLeagueParticipant[]; reports: LeagueReport[]; onManage: () => void; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeave: (successorId?: string) => Promise<string | null>; onClose: () => void }) {
   const successors = participants.filter((participant) => participant.role !== "admin");
   const [successorId, setSuccessorId] = useState(successors[0]?.id ?? "");
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -9721,6 +9732,11 @@ function LeagueOptionsDialog({ league, isPrivateLeague, isAdmin, participants, r
             ×
           </button>
         </div>
+        {isPrivateLeague && isAdmin && (
+          <button className="primary-button league-options-manage" onClick={onManage}>
+            Gestionar liga y ver código
+          </button>
+        )}
         {isPrivateLeague && isAdmin && (
           <section className="admin-report-inbox">
             <div className="options-section-title">

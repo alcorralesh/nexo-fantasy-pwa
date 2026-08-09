@@ -238,6 +238,7 @@ export const helpRules: HelpRule[] = [
       "También define cláusulas, multiplicador y cierre del clausulazo, blindajes, ofertas directas, ofertas del juego, venta inmediata, multiplicador de capitán y cierre de alineaciones.",
       "La competición queda bloqueada después de crear la liga porque determina jugadores, calendario y estadísticas.",
       "El administrador puede cambiar el nombre, la capacidad y el resto de reglas desde Gestionar liga, y puede regenerar el código para invalidar el anterior.",
+      "El administrador puede volver a consultar el código desde Opciones de la liga → Gestionar liga y ver código, incluso después de cerrar sesión o cambiar de dispositivo.",
       "Cada guardado crea una nueva versión de reglas con fecha de modificación para mantener una auditoría futura.",
       "Los cambios de mercado se aplican en la siguiente renovación y los cambios de alineación o puntuación en la siguiente jornada abierta.",
       "Ninguna modificación reescribe jornadas cerradas, pujas resueltas, fichajes, ventas o puntuaciones históricas.",
