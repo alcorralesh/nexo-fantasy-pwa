@@ -2366,7 +2366,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       mode: "market",
       rosterPolicy: "exclusive",
       type: "Privada · Mercado",
-      rank: "1.º",
+      rank: "—",
       members: `1/${rules.capacity}`,
       accent: "lime",
     };
@@ -5523,7 +5523,7 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
       </header>
       <LeagueAreaNav section={section} onChange={onSectionChange} />
 
-      {section === "resumen" && <LeagueOverview league={league} team={team} squad={squad} budget={participation?.budget ?? 100} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} privateParticipants={privateParticipants} onSectionChange={onSectionChange} notify={notify} />}
+      {section === "resumen" && <LeagueOverview league={league} team={team} squad={squad} budget={participation?.budget ?? 100} fantasyEvent={fantasyEvent} fantasyLineup={fantasyLineup} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} privateParticipants={privateParticipants} onSectionChange={onSectionChange} notify={notify} />}
       {section === "equipo" && fantasyEvent && !fantasyEvent.snapshot && (
         <article className="matchday-pending-state">
           <span>◷</span>
@@ -5540,9 +5540,10 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
   );
 }
 
-function LeagueOverview({ league, team, squad, budget, isPrivateLeague, privateParticipants, onSectionChange, notify }: { league: LeagueSummary; team: FantasyTeamSummary; squad?: InitialSquad; budget: number; isPrivateLeague: boolean; privateParticipants: PrivateLeagueParticipant[]; onSectionChange: (section: LeagueAreaSection) => void; notify: (message: string) => void }) {
+function LeagueOverview({ league, team, squad, budget, fantasyEvent, fantasyLineup, isPrivateLeague, privateParticipants, onSectionChange, notify }: { league: LeagueSummary; team: FantasyTeamSummary; squad?: InitialSquad; budget: number; fantasyEvent?: FantasyEvent; fantasyLineup?: FantasyLineupDraft; isPrivateLeague: boolean; privateParticipants: PrivateLeagueParticipant[]; onSectionChange: (section: LeagueAreaSection) => void; notify: (message: string) => void }) {
   const [activityOpen, setActivityOpen] = useState(false);
   const leagueActivity = createPrivateLeagueActivity(privateParticipants);
+  if (fantasyEvent) return <FantasyChallengeOverview league={league} event={fantasyEvent} lineup={fantasyLineup} onSectionChange={onSectionChange} />;
   return (
     <div className="league-overview">
       <section className="league-welcome-card">
@@ -5557,7 +5558,7 @@ function LeagueOverview({ league, team, squad, budget, isPrivateLeague, privateP
         </div>
         <div className="league-rank-hero">
           <small>POSICIÓN ACTUAL</small>
-          <strong>{league.rank === "—" ? "12.º" : league.rank}</strong>
+          <strong>{league.rank}</strong>
           <span>0 pts · comienza desde cero</span>
         </div>
       </section>
@@ -5718,6 +5719,122 @@ function LeagueOverview({ league, team, squad, budget, isPrivateLeague, privateP
         </article>
       </section>
       {activityOpen && <PrivateLeagueActivityDialog events={leagueActivity} leagueName={league.name} onClose={() => setActivityOpen(false)} />}
+    </div>
+  );
+}
+
+function FantasyChallengeOverview({ league, event, lineup, onSectionChange }: { league: LeagueSummary; event: FantasyEvent; lineup?: FantasyLineupDraft; onSectionChange: (section: LeagueAreaSection) => void }) {
+  const budgetPending = !event.snapshot;
+  const lineupSaved = Boolean(lineup?.playerIds.length === 11 && lineup.captainId);
+  const matchday = event.matchdays[0] ?? event.fixtures[0]?.matchday ?? 1;
+  const clubCount = new Set(event.fixtures.flatMap((fixture) => [fixture.home, fixture.away])).size;
+  const firstFixture = event.fixtures[0];
+  const headline = budgetPending ? "Ya estás dentro del reto" : lineupSaved ? "Tu alineación está guardada" : "Crea tu primer once";
+  const description = budgetPending
+    ? `El presupuesto se calculará al cerrar la Jornada ${event.previousMatchday}. Hasta entonces no puedes montar el once.`
+    : lineupSaved
+      ? "Tu once y tu capitán están guardados. Puedes revisarlos mientras el reto siga abierto."
+      : `Ya tienes ${event.snapshot!.budget.toFixed(1).replace(".", ",")} M de presupuesto congelado para montar el once.`;
+  const status = budgetPending ? "Presupuesto pendiente" : lineupSaved ? "Alineación lista" : "Sin alineación";
+  const completedSteps = budgetPending ? 1 : lineupSaved ? 3 : 2;
+
+  return (
+    <div className="league-overview fantasy-challenge-overview">
+      <section className="league-welcome-card">
+        <div>
+          <span className="league-ready">✓ INSCRIPCIÓN CONFIRMADA</span>
+          <p className="eyebrow">RETO FANTÁSTICO · JORNADA {matchday}</p>
+          <h2>{headline}</h2>
+          <p>{description}</p>
+          <button className="primary-button" onClick={() => onSectionChange(budgetPending ? "jornada" : "equipo")}>
+            {budgetPending ? "Ver partidos" : lineupSaved ? "Revisar alineación" : "Crear alineación"} <span>→</span>
+          </button>
+        </div>
+        <div className="league-rank-hero">
+          <small>ESTADO DEL RETO</small>
+          <strong>{status}</strong>
+          <span>{budgetPending ? `Se activará al cerrar J${event.previousMatchday}` : league.rank === "—" ? "0 pts · sin clasificar" : `${league.rank} · 0 pts`}</span>
+        </div>
+      </section>
+
+      <section className="league-kpis">
+        <article>
+          <span>€</span>
+          <div>
+            <small>Presupuesto</small>
+            <strong>{event.snapshot ? `${event.snapshot.budget.toFixed(1).replace(".", ",")} M` : "Pendiente"}</strong>
+          </div>
+        </article>
+        <article>
+          <span>◆</span>
+          <div>
+            <small>Valor del once</small>
+            <strong>{lineup ? `${lineup.spent.toFixed(1).replace(".", ",")} M` : "0,0 M"}</strong>
+          </div>
+        </article>
+        <article>
+          <span>XI</span>
+          <div>
+            <small>Formación</small>
+            <strong>{lineup?.formation ?? "Sin definir"}</strong>
+          </div>
+        </article>
+        <article>
+          <span>◷</span>
+          <div>
+            <small>Jugadores disponibles</small>
+            <strong>{clubCount} clubes</strong>
+          </div>
+        </article>
+      </section>
+
+      <section className="league-dashboard-grid">
+        <article className="league-panel next-actions">
+          <div className="section-title compact">
+            <div>
+              <p className="eyebrow">ESTADO DE TU PARTICIPACIÓN</p>
+              <h2>Antes de competir</h2>
+            </div>
+            <strong>{completedSteps}/3</strong>
+          </div>
+          <button className="done">
+            <span>✓</span>
+            <div>
+              <strong>Inscripción confirmada</strong>
+              <small>Tu plaza está reservada</small>
+            </div>
+          </button>
+          <button className={!budgetPending ? "done" : ""} disabled={budgetPending} onClick={() => onSectionChange("equipo")}>
+            <span>{budgetPending ? "2" : "✓"}</span>
+            <div>
+              <strong>{budgetPending ? "Esperar al presupuesto" : "Presupuesto disponible"}</strong>
+              <small>{budgetPending ? `Se congela al cerrar la Jornada ${event.previousMatchday}` : "Ya puedes seleccionar jugadores"}</small>
+            </div>
+            {!budgetPending && <b>›</b>}
+          </button>
+          <button className={lineupSaved ? "done" : ""} disabled={budgetPending} onClick={() => onSectionChange("equipo")}>
+            <span>{lineupSaved ? "✓" : "3"}</span>
+            <div>
+              <strong>{lineupSaved ? "Alineación guardada" : "Crear y guardar el once"}</strong>
+              <small>{lineupSaved ? "Once y capitán confirmados" : "Elige once jugadores y un capitán"}</small>
+            </div>
+            {!budgetPending && <b>›</b>}
+          </button>
+        </article>
+
+        <article className="league-panel matchday-preview">
+          <div>
+            <p className="eyebrow">CALENDARIO · JORNADA {matchday}</p>
+            <h2>{event.fixtures.length === 1 && firstFixture ? `${firstFixture.home} vs ${firstFixture.away}` : `${event.fixtures.length} partidos incluidos`}</h2>
+            <p>Solo puntúan los jugadores de los clubes incluidos en este reto.</p>
+          </div>
+          <div className="matchday-time">
+            <strong>{event.fixtures.length}</strong>
+            <span>{event.fixtures.length === 1 ? "partido" : "partidos"}</span>
+          </div>
+          <button className="secondary-button" onClick={() => onSectionChange("jornada")}>Ver partidos</button>
+        </article>
+      </section>
     </div>
   );
 }
@@ -9079,6 +9196,7 @@ function LeagueRankingView({ team, competition, budget, rules, bidCommitment, se
     demoRivals[2],
     demoRivals[3],
   ];
+  const rankingHasPoints = ranking.some((item) => item.totalPoints > 0 || item.matchdayPoints > 0);
   function saveOffer(rival: RivalTeam, player: InitialSquadPlayer, amount: number): string | null {
     const now = Date.now();
     const existing = sentOffers.find((offer) => offer.targetTeamId === rival.id && offer.targetPlayerId === player.id && offer.status === "active" && offer.expiresAt > now);
@@ -9108,7 +9226,7 @@ function LeagueRankingView({ team, competition, budget, rules, bidCommitment, se
           <h2>Ranking</h2>
           <p>Toca un rival para hacer ofertas o pagar la cláusula de sus jugadores.</p>
         </div>
-        <span className="ranking-round">Jornada 1</span>
+        <span className="ranking-round">{rankingHasPoints ? "Jornada 1" : "Sin jornadas puntuadas"}</span>
       </div>
       <div className="ranking-table">
         <div className="ranking-head">
@@ -9122,7 +9240,7 @@ function LeagueRankingView({ team, competition, budget, rules, bidCommitment, se
           const isAdmin = isPrivateLeague && (currentUserIsAdmin ? mine : item.id === privateAdminRival.id);
           return (
             <button className={`ranking-row ${mine ? "my-ranking" : ""}`} key={item.id} onClick={() => !mine && setSelectedRival(item)} disabled={mine}>
-              <strong>{item.position}</strong>
+              <strong>{rankingHasPoints ? item.position : "—"}</strong>
               <span className="ranking-avatar">{item.initials}</span>
               <p>
                 <strong>
