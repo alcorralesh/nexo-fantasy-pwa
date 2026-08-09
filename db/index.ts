@@ -1,3 +1,4 @@
+// @ts-nocheck -- Cloudflare bindings are injected only in the future backend runtime.
 import { env } from "cloudflare:workers";
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "./schema";
