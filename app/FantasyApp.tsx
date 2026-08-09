@@ -24,6 +24,7 @@ import { getNextFixture } from "./data/next-fixtures";
 import { defaultMarketValueConfig, type MarketValueConfig } from "./domain/market-value";
 import { calculatePlayerPoints, defaultScoringRules, demoPlayerMatchStats, type ScoringRule } from "./domain/scoring";
 import { createDemoAllocationGateway } from "./services/initial-squad-allocation";
+import { acceptNexoLegalDocuments, completeNexoOnboarding, createNexoTeam, loadNexoIdentity, registerInNexo, sendNexoPasswordReset, signInToNexo, signOutFromNexo, type NexoIdentity, type NexoRegistration } from "./services/nexo-auth";
 import { withBasePath } from "./base-path";
 
 type Section = "inicio" | "equipo" | "tendencias" | "ligas" | "liga" | "perfil" | "ayuda" | "admin";
@@ -205,7 +206,7 @@ function formatNotificationTime(createdAt: number) {
   return `hace ${Math.floor(minutes / 1440)} d`;
 }
 
-function AuthGateway({ onLogin, onRegister }: { onLogin: (email: string) => void; onRegister: (user: AuthUser) => void }) {
+function AuthGateway({ onLogin, onRegister, onRecover }: { onLogin: (email: string, password: string) => Promise<void>; onRegister: (input: NexoRegistration) => Promise<{ confirmationRequired: boolean }>; onRecover: (email: string) => Promise<void> }) {
   const [mode, setMode] = useState<"login" | "register" | "recover">("login");
   const [registerStep, setRegisterStep] = useState(1);
   const [email, setEmail] = useState("");
@@ -222,10 +223,10 @@ function AuthGateway({ onLogin, onRegister }: { onLogin: (email: string) => void
 
   function validEmail(value: string) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value); }
   function validPassword(value: string) { return value.length >= 8 && /[A-Z]/.test(value) && /\d/.test(value); }
-  function submitLogin(event: FormEvent) { event.preventDefault(); if (!validEmail(email) || password.length < 6) { setError("Revisa el correo y la contraseña."); return; } onLogin(email.trim().toLowerCase()); }
+  async function submitLogin(event: FormEvent) { event.preventDefault(); if (!validEmail(email) || password.length < 6) { setError("Revisa el correo y la contraseña."); return; } setError(""); try { await onLogin(email.trim().toLowerCase(), password); } catch (failure) { setError(failure instanceof Error ? failure.message : "No se ha podido iniciar sesión."); } }
   function continueRegister(event: FormEvent) { event.preventDefault(); if (displayName.trim().length < 2) { setError("Escribe tu nombre visible."); return; } if (username.trim().length < 3 || !/^[a-zA-Z0-9_]+$/.test(username)) { setError("El usuario debe tener al menos 3 caracteres y solo puede usar letras, números o _."); return; } if (!validEmail(email)) { setError("Introduce un correo válido."); return; } if (!validPassword(password)) { setError("La contraseña necesita 8 caracteres, una mayúscula y un número."); return; } if (password !== confirmPassword) { setError("Las contraseñas no coinciden."); return; } setError(""); setRegisterStep(2); }
-  function finishRegister(event: FormEvent) { event.preventDefault(); if (!accepted) { setError("Debes aceptar las condiciones y la política de privacidad."); return; } const name = displayName.trim(); onRegister({ id: `user_${crypto.randomUUID()}`, displayName: name, email: email.trim().toLowerCase(), initials: name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(), role: "user" }); }
-  function submitRecovery(event: FormEvent) { event.preventDefault(); if (!validEmail(email)) { setError("Introduce el correo de tu cuenta."); return; } setRecoverySent(true); setError(""); }
+  async function finishRegister(event: FormEvent) { event.preventDefault(); if (!accepted) { setError("Debes aceptar las condiciones y la política de privacidad."); return; } setError(""); try { const result = await onRegister({ email: email.trim().toLowerCase(), password, username: username.trim(), displayName: displayName.trim(), country, favoriteCompetition }); if (result.confirmationRequired) { setMode("login"); setRegisterStep(1); setPassword(""); setConfirmPassword(""); setError("Cuenta creada. Revisa tu correo para confirmarla antes de iniciar sesión."); } } catch (failure) { setError(failure instanceof Error ? failure.message : "No se ha podido crear la cuenta."); } }
+  async function submitRecovery(event: FormEvent) { event.preventDefault(); if (!validEmail(email)) { setError("Introduce el correo de tu cuenta."); return; } setError(""); try { await onRecover(email.trim().toLowerCase()); setRecoverySent(true); } catch (failure) { setError(failure instanceof Error ? failure.message : "No se ha podido enviar el enlace."); } }
   function changeMode(next: typeof mode) { setMode(next); setError(""); setRegisterStep(1); setRecoverySent(false); }
 
   return <main className="auth-page"><section className="auth-story"><Brand /><div><p className="eyebrow">TU FÚTBOL · TUS DECISIONES</p><h1>Construye un club.<br />Compite a tu manera.</h1><p>Crea equipos, entra en ligas con amigos y domina cada jornada desde cualquier dispositivo.</p></div><section><article><span>XI</span><p><strong>Alineaciones por jornada</strong><small>Prepara cada once antes de su cierre.</small></p></article><article><span>↗</span><p><strong>Mercado estratégico</strong><small>Pujas, ofertas, cláusulas y blindajes.</small></p></article><article><span>★</span><p><strong>Una carrera permanente</strong><small>Clubes, ranking, logros y recompensas.</small></p></article></section><footer><span>Primera</span><span>Segunda</span><span>Liga F</span></footer></section><section className="auth-panel"><div className="auth-mobile-brand"><Brand /></div>{mode === "login" && <><div className="auth-heading"><p className="eyebrow">BIENVENIDO DE NUEVO</p><h2>Entra en Nexo</h2><p>Continúa gestionando tus clubes y ligas.</p></div><form className="auth-form" onSubmit={submitLogin}><label><span>Correo electrónico</span><input type="email" autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); setError(""); }} placeholder="tu@email.com" /></label><label><span>Contraseña <button type="button" onClick={() => changeMode("recover")}>¿La has olvidado?</button></span><div className="password-input"><input type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(event) => { setPassword(event.target.value); setError(""); }} placeholder="Tu contraseña" /><button type="button" onClick={() => setShowPassword(!showPassword)}>{showPassword ? "Ocultar" : "Ver"}</button></div></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="primary-button auth-submit" type="submit">Iniciar sesión</button><button type="button" className="demo-access" onClick={() => { setEmail("demo@nexo.es"); setPassword("Nexo2026!"); }}>Usar acceso de demostración</button></form><p className="auth-switch">¿Todavía no tienes cuenta? <button onClick={() => changeMode("register")}>Crear cuenta</button></p></>}{mode === "register" && <><div className="auth-heading"><p className="eyebrow">CREA TU CUENTA · PASO {registerStep} DE 2</p><h2>{registerStep === 1 ? "Empieza tu carrera" : "Personaliza tu experiencia"}</h2><p>{registerStep === 1 ? "Tus credenciales serán la llave de todos tus clubes." : "Podrás cambiar estas preferencias desde tu perfil."}</p></div><div className="auth-stepper"><i className="active" /><i className={registerStep === 2 ? "active" : ""} /></div>{registerStep === 1 ? <form className="auth-form register" onSubmit={continueRegister}><div className="auth-form-row"><label><span>Nombre visible</span><input value={displayName} onChange={(event) => { setDisplayName(event.target.value); setError(""); }} placeholder="Ej. Lucía Martín" /></label><label><span>Nombre de usuario</span><input value={username} onChange={(event) => { setUsername(event.target.value); setError(""); }} placeholder="lucia_m" /></label></div><label><span>Correo electrónico</span><input type="email" autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); setError(""); }} placeholder="tu@email.com" /></label><label><span>Contraseña</span><div className="password-input"><input type={showPassword ? "text" : "password"} autoComplete="new-password" value={password} onChange={(event) => { setPassword(event.target.value); setError(""); }} placeholder="8 caracteres, mayúscula y número" /><button type="button" onClick={() => setShowPassword(!showPassword)}>{showPassword ? "Ocultar" : "Ver"}</button></div></label><label><span>Repite la contraseña</span><input type="password" autoComplete="new-password" value={confirmPassword} onChange={(event) => { setConfirmPassword(event.target.value); setError(""); }} /></label>{error && <p className="form-error">{error}</p>}<button className="primary-button auth-submit" type="submit">Continuar →</button></form> : <form className="auth-form" onSubmit={finishRegister}><label><span>País</span><select value={country} onChange={(event) => setCountry(event.target.value)}><option>España</option><option>Portugal</option><option>México</option><option>Argentina</option><option>Otro</option></select></label><label><span>Competición que quieres ver primero</span><div className="register-competition-options">{(["Primera", "Segunda", "Liga F"] as CompetitionName[]).map((item) => <button type="button" className={favoriteCompetition === item ? "active" : ""} key={item} onClick={() => setFavoriteCompetition(item)}>{item}</button>)}</div></label><label className="auth-consent"><input type="checkbox" checked={accepted} onChange={(event) => { setAccepted(event.target.checked); setError(""); }} /><span><strong>Acepto las <a href={withBasePath("/terms")} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>condiciones</a> y la <a href={withBasePath("/privacy")} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>política de privacidad</a></strong><small>Ambos documentos se abren en una página independiente.</small></span></label>{error && <p className="form-error">{error}</p>}<div className="auth-register-actions"><button type="button" className="secondary-button" onClick={() => setRegisterStep(1)}>Atrás</button><button className="primary-button" type="submit">Crear cuenta y ver la guía</button></div></form>}<p className="auth-switch">¿Ya tienes cuenta? <button onClick={() => changeMode("login")}>Iniciar sesión</button></p></>}{mode === "recover" && <><div className="auth-heading"><p className="eyebrow">RECUPERAR ACCESO</p><h2>{recoverySent ? "Revisa tu correo" : "Restablece tu contraseña"}</h2><p>{recoverySent ? `Hemos preparado las instrucciones para ${email}.` : "Te enviaremos un enlace seguro y de un solo uso."}</p></div>{recoverySent ? <div className="recovery-success"><span>✓</span><strong>Solicitud enviada</strong><p>El enlace caducará en 30 minutos y solo podrá utilizarse una vez.</p><button className="primary-button full" onClick={() => changeMode("login")}>Volver al inicio de sesión</button></div> : <form className="auth-form" onSubmit={submitRecovery}><label><span>Correo electrónico</span><input type="email" value={email} onChange={(event) => { setEmail(event.target.value); setError(""); }} placeholder="tu@email.com" /></label>{error && <p className="form-error">{error}</p>}<button className="primary-button auth-submit">Enviar enlace</button><button type="button" className="demo-access" onClick={() => changeMode("login")}>Volver</button></form>}</>}</section></main>;
@@ -271,6 +272,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
   const [initialSquads, setInitialSquads] = useState<Record<string, InitialSquad>>(() => createSeededSquads(initialData));
   const [allocationPresentation, setAllocationPresentation] = useState<AllocationPresentation | null>(null);
   const [teamId, setTeamId] = useState(initialData.activeTeamId);
+  const [backendClubId, setBackendClubId] = useState<string | null>(null);
   const [coins, setCoins] = useState(initialData.user.coins);
   const [economyRules, setEconomyRules] = useState<EconomyRules>({ dailyEarnCap: 250, achievementMultiplier: 1, dailyLoginReward: 20, weeklyLineupReward: 75, fairPlayReward: 50 });
   const [settlementRules, setSettlementRules] = useState<MatchdaySettlementRules>({ moneyPerPoint: 0.1, minimumPayout: 0, maximumPayout: 15, postponedGraceHours: 48, postponedPolicy: "provisional", advanceNoticeHours: 24, activateNextFantasyEvents: true });
@@ -324,14 +326,25 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
   }));
   useEffect(() => { window.localStorage.setItem("nexo_fantasy_lineups_v1", JSON.stringify(fantasyLineups)); }, [fantasyLineups]);
   useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("nexo_auth_session_v1");
-      if (saved) {
-        const stored = JSON.parse(saved) as Omit<AuthUser, "role"> & { role?: AuthUser["role"] };
-        setSessionUser({ ...stored, role: stored.role ?? (stored.email === "demo@nexo.es" ? "admin" : "user") });
-      }
-    } catch { /* La sesión local de demostración puede volver a iniciarse. */ }
-    finally { setAuthChecked(true); }
+    let cancelled = false;
+    async function restoreSession() {
+      try {
+        const identity = await loadNexoIdentity();
+        if (identity && !cancelled) {
+          applyBackendIdentity(identity);
+          setSessionUser(identity.user);
+          return;
+        }
+        const saved = window.localStorage.getItem("nexo_auth_session_v1");
+        if (saved && !cancelled) {
+          const stored = JSON.parse(saved) as Omit<AuthUser, "role"> & { role?: AuthUser["role"] };
+          if (stored.email === "demo@nexo.es") setSessionUser({ ...stored, role: "admin" });
+        }
+      } catch { /* La sesión puede volver a iniciarse desde la pantalla de acceso. */ }
+      finally { if (!cancelled) setAuthChecked(true); }
+    }
+    restoreSession();
+    return () => { cancelled = true; };
   }, []);
   useEffect(() => {
     try {
@@ -405,9 +418,44 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     window.setTimeout(() => setToast(""), 2600);
   }
 
+  function applyBackendIdentity(identity: NexoIdentity) {
+    setSessionUser(identity.user);
+    setCoins(identity.coins);
+    setBackendClubId(identity.activeClubId);
+    if (identity.teams.length) {
+      setTeams(identity.teams);
+      setTeamId(identity.teams[0].id);
+      setCompetition(identity.teams[0].competition);
+    }
+    try { window.localStorage.setItem("nexo_onboarding_seen_version", String(identity.onboardingVersion)); } catch { /* Preferencia local opcional. */ }
+  }
+
+  async function loginWithBackend(email: string, password: string) {
+    if (email === "demo@nexo.es") {
+      if (password !== "Nexo2026!") throw new Error("La contraseña de demostración no es correcta.");
+      startSession({ id: "demo_user", displayName: initialData.user.displayName, email, initials: initialData.user.initials, role: "admin" });
+      return;
+    }
+    const identity = await signInToNexo(email, password);
+    applyBackendIdentity(identity);
+    startSession(identity.user);
+  }
+
+  async function registerWithBackend(input: NexoRegistration) {
+    const result = await registerInNexo(input);
+    if (result.identity) {
+      applyBackendIdentity(result.identity);
+      startSession(result.identity.user, true);
+    }
+    return { confirmationRequired: result.confirmationRequired };
+  }
+
   function startSession(user: AuthUser, newlyRegistered = false) {
     setSessionUser(user);
-    try { window.localStorage.setItem("nexo_auth_session_v1", JSON.stringify(user)); } catch { /* Prototipo local. */ }
+    try {
+      if (user.email === "demo@nexo.es") window.localStorage.setItem("nexo_auth_session_v1", JSON.stringify(user));
+      else window.localStorage.removeItem("nexo_auth_session_v1");
+    } catch { /* La sesión real la conserva Supabase. */ }
     const currentPrivacy = legalConfig.privacyVersions.at(-1)?.version ?? 1;
     const currentTerms = legalConfig.termsVersions.at(-1)?.version ?? 1;
     if (newlyRegistered) {
@@ -423,11 +471,13 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
 
   function finishOnboarding() {
     try { window.localStorage.setItem("nexo_onboarding_seen_version", String(onboardingConfig.version)); } catch { /* Prototipo local. */ }
+    if (sessionUser?.email !== "demo@nexo.es") void completeNexoOnboarding(onboardingConfig.version);
     setOnboardingOpen(false);
     notify("Guía completada · ya puedes empezar a jugar");
   }
 
-  function logout() {
+  async function logout() {
+    if (sessionUser?.email !== "demo@nexo.es") await signOutFromNexo();
     try { window.localStorage.removeItem("nexo_auth_session_v1"); } catch { /* Prototipo local. */ }
     setSessionUser(null);
     setLegalAcceptanceOpen(false);
@@ -444,6 +494,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
   function acceptCurrentLegalVersions() {
     const acceptance = { privacy: legalConfig.privacyVersions.at(-1)?.version ?? 1, terms: legalConfig.termsVersions.at(-1)?.version ?? 1, acceptedAt: Date.now() };
     try { window.localStorage.setItem("nexo_legal_acceptance_v1", JSON.stringify(acceptance)); } catch { /* Prototipo local. */ }
+    if (sessionUser?.email !== "demo@nexo.es") void acceptNexoLegalDocuments();
     setLegalAcceptanceOpen(false);
     if (Number(window.localStorage.getItem("nexo_onboarding_seen_version") ?? 0) < onboardingConfig.version) setOnboardingOpen(true);
     notify("Documentos aceptados · acceso restablecido");
@@ -778,6 +829,17 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     setTeams((current) => [...current, newTeam]);
     setTeamId(newTeam.id);
     setCompetition(input.competition);
+    if (backendClubId && sessionUser?.email !== "demo@nexo.es") {
+      void createNexoTeam({ clubId: backendClubId, name, shortName, competition: input.competition })
+        .then((persistedTeam) => {
+          setTeams((current) => current.map((item) => item.id === newTeam.id ? persistedTeam : item));
+          setTeamId((current) => current === newTeam.id ? persistedTeam.id : current);
+        })
+        .catch(() => {
+          setTeams((current) => current.filter((item) => item.id !== newTeam.id));
+          notify("No se ha podido guardar el equipo. Inténtalo de nuevo.");
+        });
+    }
     if (requiresCoins) setCoins((current) => current - initialData.rules.additionalTeamCost);
     setTeamCreatorOpen(false);
     notify(requiresCoins ? `Club creado · ${initialData.rules.additionalTeamCost} monedas utilizadas` : "Club creado gratis");
@@ -859,7 +921,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     setTeamCreatorOpen(true);
   }
 
-  if (!authChecked || !sessionUser) return <AuthGateway onLogin={(email) => startSession({ id: email === "demo@nexo.es" ? "demo_user" : `user_${email}`, displayName: email === "demo@nexo.es" ? initialData.user.displayName : email.split("@")[0], email, initials: email === "demo@nexo.es" ? initialData.user.initials : email.slice(0, 2).toUpperCase(), role: email === "demo@nexo.es" ? "admin" : "user" })} onRegister={(user) => startSession(user, true)} />;
+  if (!authChecked || !sessionUser) return <AuthGateway onLogin={loginWithBackend} onRegister={registerWithBackend} onRecover={sendNexoPasswordReset} />;
   const displayUser = { ...initialData.user, ...sessionUser };
   const visibleNotifications = notifications.filter((item) => item.type === "achievement" ? preferences.achievementNotifications : item.type === "market" ? preferences.marketNotifications : preferences.matchdayNotifications);
 

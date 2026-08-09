@@ -39,6 +39,8 @@ jobs:
           GITHUB_PAGES: "true"
           NEXT_PUBLIC_BASE_PATH: /nexo-fantasy-pwa
           NEXT_PUBLIC_SITE_URL: https://alcorralesh.github.io/nexo-fantasy-pwa
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
         run: pnpm build:pages
       - name: Evitar procesamiento de Jekyll
         run: touch out/.nojekyll
