@@ -165,6 +165,10 @@ export const helpRules: HelpRule[] = [
     rules: [
       "En cualquier liga con mercado los jugadores son exclusivos y nunca pueden repetirse dentro de esa liga.",
       "La exclusividad se aplica tanto a ligas públicas como privadas.",
+      "El catálogo activo reúne las plantillas publicadas por los 20 clubes de Primera, los 22 de Segunda y los 16 de Liga F; las sincronizaciones desactivan altas antiguas sin borrar el historial.",
+      "Una plantilla inicial de 16 jugadores contiene 1 portero, 6 defensas, 6 centrocampistas y 3 delanteros, por lo que siempre permite formar el once 4-4-2 inicial.",
+      "Los nombres, clubes, posiciones y fotografías proceden de las plantillas públicas de LALIGA y Liga F; el valor de mercado es una magnitud interna de Nexo y no una tasación oficial.",
+      "La asignación completa se confirma en una transacción con bloqueo por liga y una restricción única de jugador, incluso cuando dos usuarios solicitan equipo a la vez.",
       "En las ligas fantásticas los jugadores sí pueden repetirse entre participantes.",
       "En una liga fantástica el mercado muestra permanentemente todos los jugadores cargados de la competición y no se renueva por turnos.",
       "En una liga fantástica cada jornada comienza con un equipo vacío; el once de la jornada anterior no se copia automáticamente.",

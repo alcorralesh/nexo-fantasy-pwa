@@ -12,7 +12,8 @@
     "start": "vinext start",
     "test": "vinext build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "catalog:sync": "node scripts/sync-official-rosters.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.2",

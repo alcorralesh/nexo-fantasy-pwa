@@ -3,7 +3,7 @@ import type { CompetitionName, InitialSquadPlayer, PlayerPosition } from "./cont
 export interface CompetitionPlayer extends InitialSquadPlayer {
   competition: CompetitionName;
   club: string;
-  catalogVersion: "2026-08-08";
+  catalogVersion: string;
 }
 
 type Seed = [name: string, position: PlayerPosition, club: string, value: number];
@@ -51,4 +51,3 @@ export const competitionCatalogSummary = [
   { competition: "Segunda" as const, players: competitionPlayers.Segunda.length, status: "Provisional hasta cierre de mercado" },
   { competition: "Liga F" as const, players: competitionPlayers["Liga F"].length, status: "Plantillas oficiales disponibles" },
 ];
-

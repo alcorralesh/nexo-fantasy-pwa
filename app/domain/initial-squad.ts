@@ -19,7 +19,7 @@ const startingQuotas: Record<PlayerPosition, number> = { POR: 1, DEF: 4, MED: 4,
 
 function squadQuotasFor(size: number): Record<PlayerPosition, number> {
   const quotas = { ...startingQuotas };
-  const extraOrder: PlayerPosition[] = ["POR", "DEF", "MED", "DEL", "DEF", "MED", "DEL", "POR", "DEF"];
+  const extraOrder: PlayerPosition[] = ["DEF", "MED", "DEL", "DEF", "MED", "POR", "DEF", "MED", "DEL"];
   for (let index = 0; index < Math.max(0, Math.min(20, size) - 11); index += 1) quotas[extraOrder[index % extraOrder.length]] += 1;
   return quotas;
 }
