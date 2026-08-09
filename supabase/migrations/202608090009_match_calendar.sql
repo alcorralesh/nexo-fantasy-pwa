@@ -142,5 +142,6 @@ using (exists (select 1 from public.profiles where id = auth.uid() and role = 'a
 revoke all on public.match_fixtures, public.calendar_sync_jobs from anon, authenticated;
 grant select on public.match_fixtures to anon, authenticated;
 grant select on public.calendar_sync_jobs to authenticated;
+grant select, insert, update, delete on public.match_fixtures, public.calendar_sync_jobs to service_role;
 revoke all on function public.apply_match_calendar_snapshot(uuid, text, jsonb, jsonb) from public, anon, authenticated;
 grant execute on function public.apply_match_calendar_snapshot(uuid, text, jsonb, jsonb) to service_role;
