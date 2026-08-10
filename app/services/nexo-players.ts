@@ -3,7 +3,7 @@ import type { CompetitionPlayer } from "../data/competition-players";
 import { getSupabaseClient } from "../lib/supabase-client";
 
 const competitionNames: Record<string, CompetitionName> = { primera: "Primera", segunda: "Segunda", liga_f: "Liga F" };
-const catalogCacheKey = "nexo_player_catalog_2026_27_v2";
+const catalogCacheKey = "nexo_player_catalog_2026_27_v3";
 const catalogCacheLifetime = 6 * 60 * 60 * 1000;
 
 export type CatalogSyncSummary = {
@@ -17,6 +17,7 @@ export type CatalogSyncSummary = {
 
 export type CatalogSyncResult = { jobId: string; mode: "preview" | "apply"; catalogVersion: string; summary: CatalogSyncSummary };
 export type CatalogSyncJob = { id: string; mode: "preview" | "apply"; status: "running" | "succeeded" | "failed"; catalog_version: string | null; summary: Partial<CatalogSyncSummary>; error_message: string | null; started_at: string; finished_at: string | null };
+export type NexoPlayerMatchdayPoints = Record<string,number>;
 
 function requireClient() {
   const client = getSupabaseClient();
@@ -32,10 +33,18 @@ export async function loadNexoPlayerCatalog(): Promise<Record<CompetitionName, C
     } catch { /* Una caché dañada se sustituye con la respuesta del backend. */ }
   }
   const client = requireClient();
-  const { data, error } = await client.from("players").select("id,competition_id,name,initials,position,market_value,catalog_version,photo_url,sports_clubs(name)").order("name");
-  if (error) throw error;
+  type CatalogRow={id:string;competition_id:string;name:string;initials:string;position:CompetitionPlayer["position"];market_value:number|string;catalog_version:string;photo_url:string|null;sports_clubs:{name:string}|null};
+  const rows:CatalogRow[]=[];
+  const pageSize=1000;
+  for(let from=0;;from+=pageSize){
+    const {data,error}=await client.from("players").select("id,competition_id,name,initials,position,market_value,catalog_version,photo_url,sports_clubs(name)").eq("active",true).order("name").range(from,from+pageSize-1);
+    if(error)throw error;
+    const page=(data??[]) as unknown as CatalogRow[];
+    rows.push(...page);
+    if(page.length<pageSize)break;
+  }
   const catalog: Record<CompetitionName, CompetitionPlayer[]> = { Primera: [], Segunda: [], "Liga F": [] };
-  for (const row of data ?? []) {
+  for (const row of rows) {
     const competition = competitionNames[row.competition_id] ?? "Primera";
     const clubRelation = row.sports_clubs as unknown as { name: string } | null;
     catalog[competition].push({
@@ -84,4 +93,11 @@ export async function loadNexoPlayerCatalogSyncHistory(): Promise<CatalogSyncJob
   const { data, error } = await client.from("player_catalog_sync_jobs").select("id,mode,status,catalog_version,summary,error_message,started_at,finished_at").order("started_at", { ascending: false }).limit(8);
   if (error) throw new Error(error.message);
   return (data ?? []) as CatalogSyncJob[];
+}
+
+export async function loadNexoPlayerMatchdayPoints(competition:CompetitionName,matchday:number):Promise<NexoPlayerMatchdayPoints>{
+  const competitionId=competition==="Primera"?"primera":competition==="Segunda"?"segunda":"liga_f";
+  const {data,error}=await requireClient().rpc("admin_player_matchday_points",{target_competition_id:competitionId,target_matchday:matchday});
+  if(error)throw new Error(error.message);
+  return Object.fromEntries(((data??[]) as {player_id:string;points:number|string}[]).map((row)=>[row.player_id,Number(row.points)]));
 }

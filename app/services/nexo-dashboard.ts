@@ -14,6 +14,20 @@ export type NexoClubActivity = {
   occurredAt: string;
 };
 
+export type NexoCareerTrend = {
+  sportsClubId: string;
+  sportsClubName: string;
+  managerCount: number;
+  activeCareers: number;
+  completedCareers: number;
+  dismissedCareers: number;
+  settledMatchdays: number;
+  averagePoints: number;
+  bestMatchday: number;
+  averageReputation: number;
+  averageConfidence: number;
+};
+
 function requireClient() {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase todavía no está configurado.");
@@ -58,5 +72,23 @@ export async function loadNexoCompetitionTrends(competitionId: string): Promise<
     marketListings: Number(row.market_listings),
     transfers: Number(row.transfers),
     history: ((row.history ?? []) as unknown[]).map(Number).filter(Number.isFinite),
+  }));
+}
+
+export async function loadNexoCareerTrends(competitionId: string): Promise<NexoCareerTrend[]> {
+  const { data, error } = await requireClient().rpc("manager_career_trends", { target_competition_id: competitionId });
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    sportsClubId: String(row.sports_club_id),
+    sportsClubName: String(row.sports_club_name),
+    managerCount: Number(row.manager_count),
+    activeCareers: Number(row.active_careers),
+    completedCareers: Number(row.completed_careers),
+    dismissedCareers: Number(row.dismissed_careers),
+    settledMatchdays: Number(row.settled_matchdays),
+    averagePoints: Number(row.average_points),
+    bestMatchday: Number(row.best_matchday),
+    averageReputation: Number(row.average_reputation),
+    averageConfidence: Number(row.average_confidence),
   }));
 }

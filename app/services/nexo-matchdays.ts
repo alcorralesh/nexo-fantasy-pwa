@@ -27,6 +27,42 @@ export type NexoMatchdayState = {
   statsReadyCount: number;
 };
 
+export type NexoMatchdayHistoryPlayer = {
+  playerId: string;
+  name: string;
+  initials: string;
+  position: "POR" | "DEF" | "MED" | "DEL";
+  club: string;
+  photoUrl?: string;
+  role: "starter" | "bench";
+  slotOrder: number;
+  isCaptain: boolean;
+  rawPoints: number;
+  multiplier: number;
+  points: number;
+};
+
+export type NexoMatchdayHistory = {
+  membershipId: string;
+  leagueId: string;
+  competitionId: string;
+  season: string;
+  matchday: number;
+  state: NexoMatchdayState["state"];
+  formation: string;
+  captainPlayerId?: string;
+  source: "saved_draft" | "roster_fallback" | "empty";
+  valid: boolean;
+  starterCount: number;
+  points: number;
+  payout: number;
+  calculatedAt?: string;
+  rank?: number;
+  leagueAverage: number;
+  bestScore: number;
+  players: NexoMatchdayHistoryPlayer[];
+};
+
 export type NexoSimulationScenario = "normal" | "postponed" | "advanced";
 
 export type NexoSimulationResultRow = {
@@ -121,6 +157,44 @@ export async function loadNexoMatchdayStates(): Promise<NexoMatchdayState[]> {
     fixtureCount: row.fixture_count,
     finalFixtureCount: row.final_fixture_count,
     statsReadyCount: row.stats_ready_count,
+  }));
+}
+
+export async function loadNexoMatchdayHistory(): Promise<NexoMatchdayHistory[]> {
+  const { data, error } = await requireClient().rpc("my_matchday_history");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    membershipId: String(row.membership_id),
+    leagueId: String(row.league_id),
+    competitionId: String(row.competition_id),
+    season: String(row.season),
+    matchday: Number(row.matchday),
+    state: row.state as NexoMatchdayState["state"],
+    formation: String(row.formation),
+    captainPlayerId: row.captain_player_id ? String(row.captain_player_id) : undefined,
+    source: row.source as NexoMatchdayHistory["source"],
+    valid: Boolean(row.valid),
+    starterCount: Number(row.starter_count),
+    points: Number(row.points),
+    payout: Number(row.payout),
+    calculatedAt: row.calculated_at ? String(row.calculated_at) : undefined,
+    rank: row.rank == null ? undefined : Number(row.rank),
+    leagueAverage: Number(row.league_average),
+    bestScore: Number(row.best_score),
+    players: ((row.players ?? []) as Record<string, unknown>[]).map((player) => ({
+      playerId: String(player.playerId),
+      name: String(player.name),
+      initials: String(player.initials),
+      position: player.position as NexoMatchdayHistoryPlayer["position"],
+      club: String(player.club),
+      photoUrl: player.photoUrl ? String(player.photoUrl) : undefined,
+      role: player.role as NexoMatchdayHistoryPlayer["role"],
+      slotOrder: Number(player.slotOrder),
+      isCaptain: Boolean(player.isCaptain),
+      rawPoints: Number(player.rawPoints),
+      multiplier: Number(player.multiplier),
+      points: Number(player.points),
+    })),
   }));
 }
 

@@ -12,16 +12,18 @@ import { createDemoAllocationGateway } from "./services/initial-squad-allocation
 import { acceptNexoLegalDocuments, completeNexoOnboarding, createNexoTeam, loadNexoIdentity, registerInNexo, sendNexoPasswordReset, signInToNexo, signOutFromNexo, type NexoIdentity, type NexoRegistration } from "./services/nexo-auth";
 import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, regenerateNexoPrivateLeagueCode, reserveNexoLeaguePlace, updateNexoPrivateLeague, type NexoLeagueRankingRow } from "./services/nexo-leagues";
 import { cancelNexoMarketBid, cancelNexoUserMarketOffer, forceNexoMarketRenewal, listNexoRosterPlayer, loadNexoLeagueActivity, loadNexoLeagueMarket, loadNexoLeagueMarketHistory, loadNexoLeagueUserMarket, placeNexoMarketBid, placeNexoUserMarketOffer, respondNexoUserMarketOffer, withdrawNexoUserListing, type NexoLeagueActivityEntry, type NexoLeagueMarket, type NexoLeagueUserMarket, type NexoMarketHistoryEntry, type NexoUserMarketListing, type NexoUserMarketOffer } from "./services/nexo-market";
-import { loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, runNexoPlayerCatalogSync, updateNexoPlayer, type CatalogSyncJob, type CatalogSyncResult } from "./services/nexo-players";
+import { loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, loadNexoPlayerMatchdayPoints, runNexoPlayerCatalogSync, updateNexoPlayer, type CatalogSyncJob, type CatalogSyncResult } from "./services/nexo-players";
 import { loadNexoCalendarSyncHistory, loadNexoMatchCalendar, runNexoCalendarSync, type CalendarSyncJob, type CalendarSyncResult, type MatchFixture } from "./services/nexo-calendar";
-import { deleteNexoMatchdaySimulation, loadNexoMatchdayLineups, loadNexoMatchdayStates, saveNexoMatchdayLineup, simulateNexoMatchdayClose, type NexoMatchdaySimulation, type NexoMatchdayState, type NexoSimulationScenario } from "./services/nexo-matchdays";
+import { deleteNexoMatchdaySimulation, loadNexoMatchdayHistory, loadNexoMatchdayLineups, loadNexoMatchdayStates, saveNexoMatchdayLineup, simulateNexoMatchdayClose, type NexoMatchdayHistory, type NexoMatchdaySimulation, type NexoMatchdayState, type NexoSimulationScenario } from "./services/nexo-matchdays";
 import { createNexoChallenge, loadNexoChallenges, snapshotNexoChallenge } from "./services/nexo-challenges";
 import { buyNexoPlayerClause, loadNexoLeagueContracts, raiseNexoPlayerClause, sellNexoPlayerImmediately, setNexoPlayerBlindage, type NexoLeagueContracts, type NexoPlayerContract } from "./services/nexo-contracts";
 import { loadNexoNotifications, markAllNexoNotificationsRead, markNexoNotificationRead } from "./services/nexo-notifications";
-import { loadNexoClubActivity, loadNexoCompetitionTrends, type NexoClubActivity } from "./services/nexo-dashboard";
+import { loadNexoCareerTrends, loadNexoClubActivity, loadNexoCompetitionTrends, type NexoCareerTrend, type NexoClubActivity } from "./services/nexo-dashboard";
+import { createNexoCareer, loadNexoCareerClubs, loadNexoCareerContentCatalog, loadNexoCareerRules, loadNexoCareers, saveNexoCareerContentItem, saveNexoCareerRules, type NexoCareer, type NexoCareerClub, type NexoCareerContentItem, type NexoCareerDifficulty } from "./services/nexo-career";
 import { withBasePath } from "./base-path";
+import { ManagerCareerView } from "./components/ManagerCareerView";
 
-type Section = "inicio" | "equipo" | "tendencias" | "ligas" | "liga" | "perfil" | "ayuda" | "admin";
+type Section = "inicio" | "equipo" | "tendencias" | "ligas" | "liga" | "carrera" | "perfil" | "ayuda" | "admin";
 type LeagueAreaSection = "resumen" | "equipo" | "mercado" | "jornada" | "clasificacion";
 const CURRENT_MATCHDAY = 1;
 const COMPLETED_MATCHDAYS = new Set<number>();
@@ -46,6 +48,22 @@ type ClubRules = {
   maxRankingResults: number;
   extraTeamSlotCost: number;
   singleMatchEventsConsumeSlot: boolean;
+};
+type CareerRules = {
+  enabled: boolean;
+  freeCareersPerCompetition: number;
+  extraCareerCoinCost: number;
+  initialBudget: number;
+  minimumOriginalSquad: number;
+  minimumOriginalLineup: number;
+  weeklyDecisionEnabled: boolean;
+  sameClubRankingEnabled: boolean;
+  academyDecisionCost: number;
+  failureConfidencePenalty: number;
+  dismissalConfidenceThreshold: number;
+  relaxedTargetMultiplier: number;
+  balancedTargetMultiplier: number;
+  eliteTargetMultiplier: number;
 };
 type ClubIdentityMeta = {
   motto: string;
@@ -1187,22 +1205,29 @@ const onboardingSlides = [
     points: ["Jugadores exclusivos en ligas de mercado", "Código y reglas propias en ligas privadas", "Jugadores repetibles y presupuesto fijo en Fantástica"],
   },
   {
+    icon: "M",
+    eyebrow: "3 · CARRERA DE MÁNAGER",
+    title: "Haz historia con un club real",
+    description: "Elige un equipo, hereda su plantilla y supera objetivos durante toda la temporada en un modo individual con decisiones y reputación.",
+    points: ["Mercado propio sin interferir con otros usuarios", "Objetivos de jornada, temporada e identidad", "Rankings comparativos sin compartir jugadores"],
+  },
+  {
     icon: "XI",
-    eyebrow: "3 · CADA JORNADA",
+    eyebrow: "4 · CADA JORNADA",
     title: "Guarda el once antes del cierre",
     description: "La alineación se bloquea al comenzar el primer partido asignado a su jornada. Después puedes preparar inmediatamente la siguiente.",
     points: ["Titulares, formación y capitán quedan congelados", "Los aplazados mantienen el once original", "Las jornadas solapadas se gestionan por separado"],
   },
   {
     icon: "↗",
-    eyebrow: "4 · MERCADO",
+    eyebrow: "5 · MERCADO",
     title: "Refuerza tu plantilla",
     description: "Utiliza pujas, ofertas, cláusulas y blindajes. El saldo retenido no se descuenta definitivamente hasta resolver la operación.",
     points: ["Las cantidades activas son privadas", "La puja más alta gana en la renovación", "Cada operación queda en tu historial"],
   },
   {
     icon: "★",
-    eyebrow: "5 · PROGRESA",
+    eyebrow: "6 · PROGRESA",
     title: "Puntos, dinero y recompensas",
     description: "Las estadísticas se procesan al terminar los partidos. Los puntos generan saldo deportivo y los logros pueden conceder monedas generales.",
     points: ["El saldo deportivo pertenece a una sola liga", "Las monedas nunca compran puntos", "Ayuda conserva todas las reglas del juego"],
@@ -1463,6 +1488,25 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     extraTeamSlotCost: 250,
     singleMatchEventsConsumeSlot: false,
   });
+  const [careerRules, setCareerRules] = useState<CareerRules>({
+    enabled: true,
+    freeCareersPerCompetition: 1,
+    extraCareerCoinCost: 500,
+    initialBudget: 25,
+    minimumOriginalSquad: 8,
+    minimumOriginalLineup: 7,
+    weeklyDecisionEnabled: true,
+    sameClubRankingEnabled: true,
+    academyDecisionCost: 0.5,
+    failureConfidencePenalty: 8,
+    dismissalConfidenceThreshold: 15,
+    relaxedTargetMultiplier: 0.85,
+    balancedTargetMultiplier: 1,
+    eliteTargetMultiplier: 1.12,
+  });
+  const [careers, setCareers] = useState<NexoCareer[]>([]);
+  const [careerCreatorOpen, setCareerCreatorOpen] = useState(false);
+  const [selectedCareerId, setSelectedCareerId] = useState<string | null>(null);
   const [clubIdentityMeta, setClubIdentityMeta] = useState<Record<string, ClubIdentityMeta>>({});
   const [leagueBids, setLeagueBids] = useState<Record<string, MarketBid[]>>({});
   const [playerContracts, setPlayerContracts] = useState<Record<string, PlayerContract>>({});
@@ -1496,6 +1540,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
   }));
   const [matchFixtures, setMatchFixtures] = useState<MatchFixture[]>([]);
   const [backendMatchdays, setBackendMatchdays] = useState<NexoMatchdayState[]>([]);
+  const [matchdayHistory, setMatchdayHistory] = useState<NexoMatchdayHistory[]>([]);
   useEffect(() => {
     const refresh = () => void refreshBackendCalendar();
     window.addEventListener("nexo-calendar-updated", refresh);
@@ -1719,8 +1764,11 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     void refreshBackendCalendar();
     void refreshBackendLineups();
     void refreshBackendMatchdays();
+    void refreshBackendMatchdayHistory();
     void refreshBackendChallenges();
     void refreshBackendNotifications();
+    void refreshBackendCareers();
+    void refreshBackendCareerRules();
   }
 
   async function refreshBackendLeagues() {
@@ -1786,6 +1834,14 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     }
   }
 
+  async function refreshBackendMatchdayHistory() {
+    try {
+      setMatchdayHistory(await loadNexoMatchdayHistory());
+    } catch {
+      setMatchdayHistory([]);
+    }
+  }
+
   async function refreshBackendChallenges() {
     try {
       setFantasyEvents(await loadNexoChallenges());
@@ -1809,6 +1865,67 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       })));
     } catch {
       /* Conserva el último buzón visible si la red no está disponible. */
+    }
+  }
+
+  async function refreshBackendCareers() {
+    try {
+      setCareers(await loadNexoCareers());
+    } catch {
+      /* Carrera se habilitará al aplicar su migración; el modo demo sigue disponible. */
+    }
+  }
+
+  async function refreshBackendCareerRules() {
+    try { setCareerRules(await loadNexoCareerRules()); } catch { /* Mantiene reglas seguras por defecto. */ }
+  }
+
+  async function updateCareerRules(next: CareerRules) {
+    setCareerRules(next);
+    if (sessionUser?.id !== "demo_user") {
+      try { await saveNexoCareerRules(next); } catch { notify("No se ha podido sincronizar la configuración de Carrera"); }
+    }
+  }
+
+  async function startManagerCareer(input: { sportsClub: NexoCareerClub; difficulty: NexoCareerDifficulty }): Promise<string | null> {
+    const clubContextId = backendClubId ?? teamId;
+    const competitionName = input.sportsClub.competitionId === "segunda" ? "Segunda" : input.sportsClub.competitionId === "liga_f" ? "Liga F" : "Primera";
+    const existingInCompetition = careers.filter((career) => career.competition === competitionName && career.status === "active").length;
+    const costsCoins = existingInCompetition >= careerRules.freeCareersPerCompetition;
+    if (costsCoins && coins < careerRules.extraCareerCoinCost) return "No tienes monedas suficientes para iniciar otra carrera en esta competición.";
+    try {
+      const id = sessionUser?.id === "demo_user"
+        ? `career_demo_${crypto.randomUUID()}`
+        : await createNexoCareer({ clubId: clubContextId, sportsClubId: input.sportsClub.id, difficulty: input.difficulty });
+      const career: NexoCareer = {
+        id,
+        clubId: clubContextId,
+        competition: competitionName,
+        competitionId: input.sportsClub.competitionId,
+        sportsClubId: input.sportsClub.id,
+        sportsClubName: input.sportsClub.name,
+        difficulty: input.difficulty,
+        status: "active",
+        seasonLabel: "26/27",
+        matchday: 1,
+        budget: careerRules.initialBudget,
+        reputation: 0,
+        sportingPoints: 0,
+        objectivePoints: 0,
+        originalPlayers: input.sportsClub.playerCount,
+        squadSize: input.sportsClub.playerCount,
+        createdAt: new Date().toISOString(),
+      };
+      setCareers((current) => [career, ...current.filter((item) => item.id !== id)]);
+      if (costsCoins) setCoins((current) => current - careerRules.extraCareerCoinCost);
+      setCareerCreatorOpen(false);
+      setSelectedCareerId(id);
+      setActive("carrera");
+      window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
+      notify(`Tu carrera con ${career.sportsClubName} ya ha comenzado`);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : "No se ha podido iniciar la carrera.";
     }
   }
 
@@ -3031,11 +3148,12 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
           </button>
         </header>
 
-        <main className="content">
-          {active === "inicio" && <Dashboard userName={displayUser.displayName} competition={competition} setCompetition={setCompetition} teamId={teamId} team={team} participations={participations} clubMotto={clubIdentityMeta[teamId]?.motto} leagues={leagues} fixtures={matchFixtures} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} onOpenLeague={openLeague} featuredFantasyEvent={fantasyEvents.find((event) => event.featured && event.competition === competition && event.status !== "finished")} onJoinFantasy={openFantasyJoin} navigate={navigate} />}
-          {active === "equipo" && <TeamView teamId={teamId} setTeamId={setTeamId} teams={teams} leagues={leagues} participations={participations} fantasyEvents={fantasyEvents} clubRules={clubRules} clubIdentityMeta={clubIdentityMeta} onUpdateClub={updateClubIdentity} competition={competition} setCompetition={setCompetition} freeLimit={initialData.rules.freeTeamsPerCompetition} onCreateTeam={() => setTeamCreatorOpen(true)} onOpenLeague={openLeague} onBrowseLeagues={() => navigate("ligas")} />}
+        <main className={active === "liga" ? "content league-content" : "content"}>
+          {active === "inicio" && <Dashboard userName={displayUser.displayName} competition={competition} setCompetition={setCompetition} teamId={teamId} team={team} participations={participations} clubMotto={clubIdentityMeta[teamId]?.motto} leagues={leagues} fixtures={matchFixtures} careers={careers} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} onOpenLeague={openLeague} onOpenCareer={(careerId) => { setSelectedCareerId(careerId); setActive("carrera"); window.requestAnimationFrame(() => window.scrollTo({ top: 0 })); }} onCreateCareer={() => setCareerCreatorOpen(true)} featuredFantasyEvent={fantasyEvents.find((event) => event.featured && event.competition === competition && event.status !== "finished")} onJoinFantasy={openFantasyJoin} navigate={navigate} />}
+          {active === "equipo" && <TeamView teamId={teamId} setTeamId={setTeamId} teams={teams} leagues={leagues} participations={participations} fantasyEvents={fantasyEvents} careers={careers} clubRules={clubRules} clubIdentityMeta={clubIdentityMeta} onUpdateClub={updateClubIdentity} competition={competition} setCompetition={setCompetition} freeLimit={initialData.rules.freeTeamsPerCompetition} onCreateTeam={() => setTeamCreatorOpen(true)} onOpenLeague={openLeague} onOpenCareer={(careerId) => { setSelectedCareerId(careerId); setActive("carrera"); }} onCreateCareer={() => setCareerCreatorOpen(true)} onBrowseLeagues={() => navigate("ligas")} />}
           {active === "tendencias" && <TrendsView competition={competition} setCompetition={setCompetition} query={query} setQuery={setQuery} position={position} setPosition={setPosition} leagues={leagues} rankingRows={Object.values(leagueRankings).flat()} />}
-          {active === "ligas" && <LeaguesView leagues={leagues} participations={participations} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} fantasyEvents={fantasyEvents.filter((event) => event.status !== "draft" && event.status !== "finished")} onOpenLeague={openLeague} onJoinPublic={() => setPublicJoinOpen(true)} onJoinFantasy={openFantasyJoin} onCreatePrivate={() => setPrivateLeagueCreatorOpen(true)} onJoinCode={findPrivateLeagueByCode} joinCode={joinCode} setJoinCode={setJoinCode} notify={notify} />}
+          {active === "ligas" && <LeaguesView leagues={leagues} participations={participations} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} fantasyEvents={fantasyEvents.filter((event) => event.status !== "draft" && event.status !== "finished")} onOpenLeague={openLeague} onJoinPublic={() => setPublicJoinOpen(true)} onJoinFantasy={openFantasyJoin} onCreatePrivate={() => setPrivateLeagueCreatorOpen(true)} onCareer={() => setCareerCreatorOpen(true)} onJoinCode={findPrivateLeagueByCode} joinCode={joinCode} setJoinCode={setJoinCode} notify={notify} />}
+          {active === "carrera" && <ManagerCareerView career={careers.find((item) => item.id === selectedCareerId) ?? careers[0]} players={adminPlayerCatalog} fixtures={matchFixtures} rules={careerRules} backendEnabled={sessionUser?.id !== "demo_user"} onCareerChanged={refreshBackendCareers} onBack={() => navigate("equipo")} onNewCareer={() => setCareerCreatorOpen(true)} notify={notify} />}
           {active === "liga" && leagues.find((item) => item.id === selectedLeagueId) && (
             <LeagueDetailView
               league={leagues.find((item) => item.id === selectedLeagueId)!}
@@ -3106,6 +3224,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
               onClausePurchase={(rivalTeamId, player, clause, blind) => executeClausePurchase(selectedLeagueId, rivalTeamId, player, clause, blind)}
               scoringRules={scoringRules}
               settlementRules={settlementRules}
+              matchdayHistory={matchdayHistory}
               fixtures={matchFixtures}
               fantasyLineup={fantasyLineups[`${participations.find((entry) => entry.leagueId === selectedLeagueId)?.id ?? ""}:${selectedFantasyEvent?.matchdays[0] ?? selectedEditableMatchday}`]}
               previousFantasyLineup={fantasyLineups[`${participations.find((entry) => entry.leagueId === selectedLeagueId)?.id ?? ""}:${(selectedFantasyEvent?.matchdays[0] ?? selectedEditableMatchday) - 1}`]}
@@ -3172,6 +3291,10 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
               setMarketRules={setMarketRules}
               clubRules={clubRules}
               setClubRules={setClubRules}
+              careerRules={careerRules}
+              setCareerRules={updateCareerRules}
+              onSaveCareerRules={updateCareerRules}
+              careers={careers}
               economyRules={economyRules}
               setEconomyRules={setEconomyRules}
               settlementRules={settlementRules}
@@ -3213,18 +3336,15 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
           )}
         </main>
 
-        {active === "liga" ? (
-          <LeagueAreaNav section={leagueAreaSection} onChange={setLeagueAreaSection} mobile />
-        ) : (
-          <nav className="bottom-nav" aria-label="Navegación móvil">
-            {navItems.map((item) => (
-              <button key={item.id} className={active === item.id ? "active" : ""} onClick={() => navigate(item.id)}>
-                <span>{item.icon}</span>
-                <small>{item.label}</small>
-              </button>
-            ))}
-          </nav>
-        )}
+        {active === "liga" && <LeagueAreaNav section={leagueAreaSection} onChange={setLeagueAreaSection} mobile />}
+        <nav className={`bottom-nav ${active === "liga" ? "global-nav-with-context" : ""}`} aria-label="Navegación móvil">
+          {navItems.map((item) => (
+            <button key={item.id} className={active === item.id || (active === "liga" && item.id === "ligas") ? "active" : ""} onClick={() => navigate(item.id)}>
+              <span>{item.icon}</span>
+              <small>{item.label}</small>
+            </button>
+          ))}
+        </nav>
       </div>
       {teamCreatorOpen && (
         <CreateTeamDialog
@@ -3239,6 +3359,20 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
             setResumeJoinAfterClub(null);
           }}
           onCreate={createTeam}
+        />
+      )}
+      {careerCreatorOpen && (
+        <CreateManagerCareerDialog
+          competition={competition}
+          teams={teams}
+          activeTeamId={teamId}
+          players={adminPlayerCatalog}
+          careers={careers}
+          rules={careerRules}
+          coins={coins}
+          backendEnabled={sessionUser.id !== "demo_user"}
+          onClose={() => setCareerCreatorOpen(false)}
+          onCreate={startManagerCareer}
         />
       )}
       {onboardingOpen && <GameOnboarding userName={displayUser.displayName} reason={onboardingConfig.forceReason} onFinish={finishOnboarding} />}
@@ -4182,7 +4316,7 @@ function FeaturedFantasyEvent({ event, joined, onJoin, onOpen }: { event: Fantas
         <span>{fixture?.away.slice(0, 2).toUpperCase()}</span>
       </div>
       <div className="partidazo-status">
-        <small>{event.snapshot ? "PRESUPUESTO CONGELADO" : `SE PUBLICA AL CERRAR J${event.previousMatchday}`}</small>
+        <small>{event.snapshot ? "PRESUPUESTO CONGELADO" : `ESPERANDO ${event.competition.toUpperCase()} · J${event.previousMatchday}`}</small>
         <strong>{event.snapshot ? `${event.snapshot.budget.toFixed(1).replace(".", ",")} M` : "Pendiente"}</strong>
         <span>{event.memberCount.toLocaleString("es-ES")} inscritos</span>
         <button onClick={() => (joined ? onOpen(event.id) : onJoin(event.id))}>{joined ? "Abrir mi liga" : event.snapshot ? "Unirme y crear once" : "Inscribirme ahora"} →</button>
@@ -4191,7 +4325,7 @@ function FeaturedFantasyEvent({ event, joined, onJoin, onOpen }: { event: Fantas
   );
 }
 
-function Dashboard({ userName, competition, setCompetition, teamId, team, participations, clubMotto, leagues, fixtures, featuredLeagueIds, onToggleFeaturedLeague, onOpenLeague, featuredFantasyEvent, onJoinFantasy, navigate }: { userName: string; competition: CompetitionName; setCompetition: (value: CompetitionName) => void; teamId: string; team: string; participations: LeagueParticipation[]; clubMotto?: string; leagues: LeagueSummary[]; fixtures: MatchFixture[]; featuredLeagueIds: string[]; onToggleFeaturedLeague: (leagueId: string) => void; onOpenLeague: (leagueId: string) => void; featuredFantasyEvent?: FantasyEvent; onJoinFantasy: (eventId?: string) => void; navigate: (value: Section) => void }) {
+function Dashboard({ userName, competition, setCompetition, teamId, team, participations, clubMotto, leagues, fixtures, careers, featuredLeagueIds, onToggleFeaturedLeague, onOpenLeague, onOpenCareer, onCreateCareer, featuredFantasyEvent, onJoinFantasy, navigate }: { userName: string; competition: CompetitionName; setCompetition: (value: CompetitionName) => void; teamId: string; team: string; participations: LeagueParticipation[]; clubMotto?: string; leagues: LeagueSummary[]; fixtures: MatchFixture[]; careers: NexoCareer[]; featuredLeagueIds: string[]; onToggleFeaturedLeague: (leagueId: string) => void; onOpenLeague: (leagueId: string) => void; onOpenCareer: (careerId: string) => void; onCreateCareer: () => void; featuredFantasyEvent?: FantasyEvent; onJoinFantasy: (eventId?: string) => void; navigate: (value: Section) => void }) {
   const [clubActivity, setClubActivity] = useState<NexoClubActivity[]>([]);
   const [clubActivityLoading, setClubActivityLoading] = useState(true);
   const featuredLeagues = leagues.filter((league) => featuredLeagueIds.includes(league.id)).slice(0, 4);
@@ -4202,6 +4336,7 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
     .filter((rank) => Number.isFinite(rank) && rank > 0);
   const bestPosition = rankedPositions.length ? Math.min(...rankedPositions) : null;
   const closedFixtures = fixtures.filter((fixture) => fixture.competition === competition && fixture.status === "final").length;
+  const activeCareer = careers.find((career) => career.competition === competition && career.status === "active");
   useEffect(() => {
     let current = true;
     setClubActivityLoading(true);
@@ -4291,7 +4426,7 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
           <div className="score-stats">
             <div>
               <small>Carrera</small>
-              <strong>0 pts</strong>
+              <strong>{activeCareer ? `${activeCareer.reputation} rep` : "Sin iniciar"}</strong>
             </div>
             <div>
               <small>Mejor puesto</small>
@@ -4302,6 +4437,11 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
               <strong>0</strong>
             </div>
           </div>
+          <button className={`career-home-promo ${activeCareer ? "active" : ""}`} onClick={() => activeCareer ? onOpenCareer(activeCareer.id) : onCreateCareer()}>
+            <span>M</span>
+            <p><small>{activeCareer ? `JORNADA ${activeCareer.matchday} · EN CURSO` : "NUEVO · MODO INDIVIDUAL"}</small><strong>{activeCareer ? `Continúa con ${activeCareer.sportsClubName}` : "Empieza tu Carrera de mánager"}</strong><em>{activeCareer ? `${activeCareer.budget.toFixed(1).replace(".", ",")} M · ${activeCareer.reputation}/100 reputación` : "Club real, decisiones y una temporada para recordar."}</em></p>
+            <b>{activeCareer ? "Continuar →" : "Elegir club →"}</b>
+          </button>
           <button className="dashboard-active-club" onClick={() => navigate("equipo")}>
             <span>ACTIVO</span>
             <p>
@@ -4417,7 +4557,66 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
   );
 }
 
-function TeamView({ teamId, setTeamId, teams, leagues, participations, fantasyEvents, clubRules, clubIdentityMeta, onUpdateClub, competition, setCompetition, freeLimit, onCreateTeam, onOpenLeague, onBrowseLeagues }: { teamId: string; setTeamId: (value: string) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; fantasyEvents: FantasyEvent[]; clubRules: ClubRules; clubIdentityMeta: Record<string, ClubIdentityMeta>; onUpdateClub: (clubId: string, input: ClubIdentityInput) => string | null; competition: CompetitionName; setCompetition: (value: CompetitionName) => void; freeLimit: number; onCreateTeam: () => void; onOpenLeague: (leagueId: string) => void; onBrowseLeagues: () => void }) {
+function CreateManagerCareerDialog({ competition, teams, activeTeamId, players, careers, rules, coins, backendEnabled, onClose, onCreate }: { competition: CompetitionName; teams: FantasyTeamSummary[]; activeTeamId: string; players: Record<CompetitionName, CompetitionPlayer[]>; careers: NexoCareer[]; rules: CareerRules; coins: number; backendEnabled: boolean; onClose: () => void; onCreate: (input: { sportsClub: NexoCareerClub; difficulty: NexoCareerDifficulty }) => Promise<string | null> }) {
+  const [selectedCompetition, setSelectedCompetition] = useState<CompetitionName>(competition);
+  const [clubs, setClubs] = useState<NexoCareerClub[]>([]);
+  const [selectedClubId, setSelectedClubId] = useState("");
+  const [difficulty, setDifficulty] = useState<NexoCareerDifficulty>("balanced");
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const competitionId = selectedCompetition === "Primera" ? "primera" : selectedCompetition === "Segunda" ? "segunda" : "liga_f";
+  useEffect(() => {
+    let current = true;
+    setLoading(true);
+    const fallback = () => {
+      const grouped = new Map<string, CompetitionPlayer[]>();
+      players[selectedCompetition].forEach((player) => grouped.set(player.club, [...(grouped.get(player.club) ?? []), player]));
+      return [...grouped.entries()].filter(([, squad]) => squad.length >= 11).map(([name, squad]) => ({ id: `${competitionId}_${name.toLocaleLowerCase("es").replace(/[^a-z0-9]+/g, "_")}`, name, competitionId, playerCount: squad.length, squadValue: squad.reduce((sum, player) => sum + player.value, 0) }));
+    };
+    (backendEnabled ? loadNexoCareerClubs(competitionId) : Promise.resolve(fallback())).then((rows) => { if (current) { const next = rows.length ? rows : fallback(); setClubs(next); setSelectedClubId(next[0]?.id ?? ""); } }).catch(() => { if (current) { const next = fallback(); setClubs(next); setSelectedClubId(next[0]?.id ?? ""); } }).finally(() => current && setLoading(false));
+    return () => { current = false; };
+  }, [selectedCompetition, competitionId, backendEnabled, players]);
+  const selectedClub = clubs.find((club) => club.id === selectedClubId);
+  const activeInCompetition = careers.filter((career) => career.competition === selectedCompetition && career.status === "active").length;
+  const cost = activeInCompetition >= rules.freeCareersPerCompetition ? rules.extraCareerCoinCost : 0;
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedClub) return setError("Selecciona un club con plantilla disponible.");
+    setSaving(true); setError("");
+    const nextError = await onCreate({ sportsClub: selectedClub, difficulty });
+    if (nextError) setError(nextError);
+    setSaving(false);
+  }
+  return <div className="dialog-backdrop"><section className="team-dialog career-create-dialog" role="dialog" aria-modal="true" aria-labelledby="career-create-title"><div className="dialog-header"><div><p className="eyebrow">NUEVA HISTORIA</p><h2 id="career-create-title">Carrera de mánager</h2><p>Tu mercado y tus decisiones serán completamente individuales.</p></div><button className="dialog-close" onClick={onClose}>×</button></div><form onSubmit={submit}>
+    <div className="career-create-steps"><span className="active">1 · Competición</span><span className={selectedClub ? "active" : ""}>2 · Club</span><span className={selectedClub ? "active" : ""}>3 · Exigencia</span></div>
+    <CompetitionTabs value={selectedCompetition} onChange={setSelectedCompetition} />
+    <div className="career-club-picker">{loading ? <div className="empty-state"><strong>Cargando clubes reales…</strong></div> : clubs.map((club) => <button type="button" key={club.id} className={selectedClubId === club.id ? "active" : ""} onClick={() => setSelectedClubId(club.id)}><span>{club.name.split(/\s+/).map((word) => word[0]).slice(0,2).join("")}</span><p><strong>{club.name}</strong><small>{club.playerCount} jugadores · {club.squadValue.toFixed(1).replace(".", ",")} M</small></p><i>{selectedClubId === club.id ? "✓" : ""}</i></button>)}</div>
+    <article className="career-guided-note"><span>?</span><p><strong>¿Qué cambia con la exigencia?</strong><small>No hace mejores a tus jugadores. Ajusta la presión de la directiva, el margen para fallar, la dificultad de los objetivos y la reputación que puedes ganar. No podrá cambiarse durante la temporada.</small></p></article>
+    <div className="career-difficulty"><p className="eyebrow">NIVEL DE EXIGENCIA</p>{([{ id: "relaxed", title: "Cantera", badge: "PARA APRENDER", text: "Objetivos progresivos y más margen ante una mala racha.", bullets: ["Penalizaciones reducidas", "Reputación ×0,80", "Más tiempo para cumplir"] }, { id: "balanced", title: "Profesional", badge: "RECOMENDADO", text: "La experiencia completa con riesgo y recompensa equilibrados.", bullets: ["Presión realista", "Reputación ×1,00", "Objetivos adaptados al club"] }, { id: "elite", title: "Élite", badge: "MÁXIMO RETO", text: "La directiva exige resultados rápidos y castiga cada tropiezo.", bullets: ["Menos margen de error", "Reputación ×1,35", "Objetivos más ambiciosos"] }] as const).map((item) => <button type="button" key={item.id} className={difficulty === item.id ? "active" : ""} onClick={() => setDifficulty(item.id)}><em>{item.badge}</em><strong>{item.title}</strong><small>{item.text}</small><ul>{item.bullets.map((bullet)=><li key={bullet}>✓ {bullet}</li>)}</ul></button>)}</div>
+    <article className="career-contract-preview"><span>✦</span><p><strong>Contrato de la directiva</strong><small>{rules.initialBudget} M iniciales · mínimo {rules.minimumOriginalSquad} jugadores originales · {rules.minimumOriginalLineup} en el once</small></p><b>{cost ? `${cost} monedas` : "GRATIS"}</b></article>
+    {error && <p className="form-error">{error}</p>}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={!selectedClub || saving || cost > coins}>{saving ? "Firmando…" : "Firmar y comenzar →"}</button></div>
+  </form></section></div>;
+}
+
+function LegacyManagerCareerView({ career, players, fixtures, rules, onBack, onNewCareer, notify }: { career?: NexoCareer; players: Record<CompetitionName, CompetitionPlayer[]>; fixtures: MatchFixture[]; rules: CareerRules; onBack: () => void; onNewCareer: () => void; notify: (value: string) => void }) {
+  const [decisionMade, setDecisionMade] = useState("");
+  if (!career) return <section className="career-empty-page"><span>M</span><p className="eyebrow">CARRERA DE MÁNAGER</p><h1>Tu historia aún no ha empezado</h1><p>Elige un club real y afronta una temporada de objetivos, decisiones y reputación.</p><button className="primary-button" onClick={onNewCareer}>Elegir mi club</button></section>;
+  const squad = players[career.competition].filter((player) => player.club === career.sportsClubName);
+  const nextFixture = fixtures.filter((fixture) => fixture.competitionId === career.competitionId && fixture.matchday >= career.matchday && fixture.status !== "final").find((fixture) => fixture.home === career.sportsClubName || fixture.away === career.sportsClubName);
+  const objectiveProgress = Math.min(100, Math.round((career.sportingPoints / 40) * 100));
+  return <section className="manager-career-page">
+    <header className="career-topline"><button onClick={onBack}>← Clubes</button><p><span>CARRERA DE MÁNAGER</span><strong>{career.sportsClubName} · {career.seasonLabel}</strong></p><button onClick={onNewCareer}>＋ Nueva</button></header>
+    <article className="career-hero"><div><p className="eyebrow">JORNADA {career.matchday} · {career.difficulty === "elite" ? "ÉLITE" : career.difficulty === "relaxed" ? "CANTERA" : "PROFESIONAL"}</p><h1>Que el club recuerde tu nombre.</h1><p>Conserva su identidad, mejora la plantilla y responde a una directiva que evaluará cada decisión.</p><div><button onClick={() => notify("El editor del once de Carrera quedará vinculado a la jornada abierta")}>Preparar el once →</button><button onClick={() => notify("Mercado individual de Carrera preparado")}>Abrir mercado</button></div></div><section><span>{career.sportsClubName.split(/\s+/).map((word) => word[0]).slice(0,2).join("")}</span><p><small>REPUTACIÓN</small><strong>{career.reputation}<i>/100</i></strong></p><div><i style={{width:`${career.reputation}%`}} /></div></section></article>
+    <div className="career-kpis"><article><small>PRESUPUESTO</small><strong>{career.budget.toFixed(1).replace(".", ",")} M</strong><span>Mercado exclusivo</span></article><article><small>PUNTOS DEPORTIVOS</small><strong>{career.sportingPoints}</strong><span>Temporada actual</span></article><article><small>IDENTIDAD</small><strong>{career.originalPlayers}/{career.squadSize}</strong><span>Jugadores originales</span></article><article><small>PRÓXIMO PARTIDO</small><strong>{nextFixture ? `${nextFixture.home} – ${nextFixture.away}` : "Pendiente"}</strong><span>{nextFixture ? `Jornada ${nextFixture.matchday}` : "Calendario por sincronizar"}</span></article></div>
+    <div className="career-main-grid"><article className="career-objectives"><p className="eyebrow">CONTRATO DE LA DIRECTIVA</p><h2>Objetivos que importan</h2><div className="career-objective-main"><span>{objectiveProgress}%</span><p><strong>Objetivo de temporada</strong><small>Alcanza 40 puntos deportivos manteniendo la identidad del club.</small><i><b style={{width:`${objectiveProgress}%`}} /></i></p></div><ul><li><span>✓</span><p><strong>Identidad del vestuario</strong><small>Mantén {rules.minimumOriginalSquad} jugadores originales y {rules.minimumOriginalLineup} en el once.</small></p><b>+8 REP</b></li><li><span>1</span><p><strong>Debut con carácter</strong><small>Supera 55 puntos fantasy en la Jornada 1.</small></p><b>+6 REP</b></li><li><span>★</span><p><strong>Haz historia</strong><small>Supera la expectativa real asignada al club.</small></p><b>+25 REP</b></li></ul></article>
+    <article className="career-decision"><p className="eyebrow">DECISIÓN DE LA SEMANA</p><h2>El vestuario pide una señal</h2><p>Un joven reclama minutos antes de un partido clave. Tu decisión tendrá consecuencias.</p>{decisionMade ? <div className="career-decision-result"><span>✓</span><strong>Decisión registrada</strong><small>{decisionMade}</small></div> : <div><button onClick={() => setDecisionMade("Apuestas por la cantera: +reputación potencial, mayor riesgo deportivo.")}><strong>Apostar por la cantera</strong><small>+ reputación · + riesgo</small></button><button onClick={() => setDecisionMade("Priorizas la experiencia: menor riesgo, pero la afición espera más.")}><strong>Proteger el resultado</strong><small>− riesgo · presión futura</small></button></div>}<footer>Las decisiones se cierran con la jornada y no pueden repetirse.</footer></article></div>
+    <section className="career-season-road"><div><p className="eyebrow">EL CAMINO</p><h2>Tu temporada, jornada a jornada</h2></div><div>{[1,5,10,20,30,38].map((matchday,index)=><article className={career.matchday>=matchday?"done":career.matchday+4>=matchday?"current":""} key={matchday}><span>{career.matchday>=matchday?"✓":matchday}</span><p><strong>{index===0?"Debut":index===2?"Revisión":index===4?"Recta final":index===5?"Veredicto":"Jornada clave"}</strong><small>J{matchday}</small></p></article>)}</div></section>
+    <section className="career-squad-preview"><div className="section-title"><div><p className="eyebrow">PLANTILLA HEREDADA</p><h2>La base de tu proyecto</h2><p>{squad.length || career.squadSize} jugadores del equipo real, sin exclusividad frente a otros mánagers.</p></div><button className="text-button" onClick={() => notify("Plantilla completa de Carrera")}>Ver plantilla completa →</button></div><div>{squad.slice(0,6).map((player)=><article key={player.id}><span>{player.initials}</span><p><strong>{player.name}</strong><small>{player.position} · {player.value.toFixed(1).replace(".",",")} M</small></p><b>ORIGINAL</b></article>)}</div></section>
+  </section>;
+}
+
+function TeamView({ teamId, setTeamId, teams, leagues, participations, fantasyEvents, careers, clubRules, clubIdentityMeta, onUpdateClub, competition, setCompetition, freeLimit, onCreateTeam, onOpenLeague, onOpenCareer, onCreateCareer, onBrowseLeagues }: { teamId: string; setTeamId: (value: string) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; fantasyEvents: FantasyEvent[]; careers: NexoCareer[]; clubRules: ClubRules; clubIdentityMeta: Record<string, ClubIdentityMeta>; onUpdateClub: (clubId: string, input: ClubIdentityInput) => string | null; competition: CompetitionName; setCompetition: (value: CompetitionName) => void; freeLimit: number; onCreateTeam: () => void; onOpenLeague: (leagueId: string) => void; onOpenCareer: (careerId: string) => void; onCreateCareer: () => void; onBrowseLeagues: () => void }) {
   const [editIdentityOpen, setEditIdentityOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const competitionClubs = teams.filter((item) => item.competition === competition);
@@ -4440,6 +4639,7 @@ function TeamView({ teamId, setTeamId, teams, leagues, participations, fantasyEv
     : [];
   const marketTeams = clubParticipations.filter(({ league }) => league.mode === "market").length;
   const fantasyTeams = clubParticipations.filter(({ league }) => league.mode === "fantasy").length;
+  const clubCareers = careers.filter((career) => career.competition === competition && (!activeClub || career.clubId === activeClub.id) && career.status !== "abandoned");
   const rankedPositions = clubParticipations
     .map(({ league }) => Number.parseInt(league.rank, 10))
     .filter((rank) => Number.isFinite(rank) && rank > 0);
@@ -4612,6 +4812,29 @@ function TeamView({ teamId, setTeamId, teams, leagues, participations, fantasyEv
               </article>
             )}
           </section>
+          <section className="club-career-mode-block">
+            <div className="section-title">
+              <div>
+                <p className="eyebrow">MODO INDIVIDUAL</p>
+                <h2>Carreras de mánager</h2>
+                <p>Dirige un club real, toma decisiones semanales y construye una historia propia.</p>
+              </div>
+              <button className="text-button" onClick={onCreateCareer}>Nueva carrera →</button>
+            </div>
+            {clubCareers.length ? (
+              <div className="club-career-cards">
+                {clubCareers.map((career) => (
+                  <button className="club-career-card" key={career.id} onClick={() => onOpenCareer(career.id)}>
+                    <span>{career.sportsClubName.split(/\s+/).map((word) => word[0]).slice(0, 2).join("")}</span>
+                    <div className="club-career-card-copy"><small>{career.seasonLabel} · {career.status==="dismissed"?"DESTITUIDO":career.status==="completed"?"FINALIZADA":`JORNADA ${career.matchday}`}</small><strong>{career.sportsClubName}</strong><p><span>Reputación <b>{career.reputation}/100</b></span><span>Puntos <b>{career.sportingPoints}</b></span></p></div>
+                    <b>{career.status==="active"?"Continuar →":"Ver historial →"}</b>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <button className="career-empty-cta" onClick={onCreateCareer}><span>M</span><div><strong>Empieza una carrera distinta a cualquier fantasy</strong><p>Plantilla real, mercado propio, objetivos y presión de la directiva.</p></div><b>Elegir club →</b></button>
+            )}
+          </section>
           <section className="club-career-grid">
             <article>
               <p className="eyebrow">DISTRIBUCIÓN</p>
@@ -4622,6 +4845,9 @@ function TeamView({ teamId, setTeamId, teams, leagues, participations, fantasyEv
                 </span>
                 <span>
                   <b>{fantasyTeams}</b>Fantástica
+                </span>
+                <span>
+                  <b>{clubCareers.length}</b>Carrera
                 </span>
                 <span>
                   <b>{clubParticipations.filter(({ league }) => league.type.includes("Privada")).length}</b>
@@ -4966,6 +5192,8 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
   const [fullRankingOpen, setFullRankingOpen] = useState(false);
   const [trends, setTrends] = useState<PlayerTrend[]>([]);
   const [trendsLoading, setTrendsLoading] = useState(true);
+  const [careerTrends, setCareerTrends] = useState<NexoCareerTrend[]>([]);
+  const [careerTrendsLoading, setCareerTrendsLoading] = useState(true);
   const competitionId = competition === "Primera" ? "primera" : competition === "Segunda" ? "segunda" : "liga_f";
   useEffect(() => {
     let current = true;
@@ -4979,6 +5207,23 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
       })
       .finally(() => {
         if (current) setTrendsLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [competitionId]);
+  useEffect(() => {
+    let current = true;
+    setCareerTrendsLoading(true);
+    loadNexoCareerTrends(competitionId)
+      .then((rows) => {
+        if (current) setCareerTrends(rows);
+      })
+      .catch(() => {
+        if (current) setCareerTrends([]);
+      })
+      .finally(() => {
+        if (current) setCareerTrendsLoading(false);
       });
     return () => {
       current = false;
@@ -5011,6 +5256,7 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
   return (
     <>
       <ClubTrendPulse competition={competition} clubs={clubTrends} />
+      <CareerTrendPulse competition={competition} rows={careerTrends} loading={careerTrendsLoading} />
       <section className="trends-hero">
         <div className="trends-hero-copy">
           <p className="eyebrow">INTELIGENCIA DE MERCADO</p>
@@ -5156,6 +5402,17 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
       </section>
       {fullRankingOpen && <FullPerformanceRankingDialog players={trends} competition={competition} onClose={() => setFullRankingOpen(false)} />}
     </>
+  );
+}
+
+function CareerTrendPulse({ competition, rows, loading }: { competition: CompetitionName; rows: NexoCareerTrend[]; loading: boolean }) {
+  const leaders = rows.slice(0, 3);
+  const totalManagers = rows.reduce((total, row) => total + row.managerCount, 0);
+  return (
+    <section className="career-trend-pulse">
+      <div><p className="eyebrow">CARRERA · {competition.toUpperCase()}</p><h2>Los clubes que más eligen los mánagers</h2><p>Actividad agregada de Carrera, sin revelar usuarios, plantillas ni decisiones.</p>{!loading&&<b className="career-trend-total">{totalManagers} carreras · datos reales</b>}</div>
+      {leaders.length ? <div>{leaders.map((row, index) => <article key={row.sportsClubId}><b>{String(index + 1).padStart(2,"0")}</b><span>{row.sportsClubName.split(/\s+/).map((word)=>word[0]).slice(0,2).join("").toUpperCase()}</span><p><strong>{row.sportsClubName}</strong><small>{row.managerCount} mánagers · {row.settledMatchdays} jornadas cerradas</small><em>{row.settledMatchdays ? `${row.averagePoints.toFixed(1).replace(".",",")} pts de media` : "Puntos pendientes"} · confianza {row.averageConfidence.toFixed(1).replace(".",",")}</em></p></article>)}</div> : <article className="career-trend-empty"><span>M</span><p><strong>{loading?"Cargando carreras":"Aún no hay carreras activas"}</strong><small>{loading?"Consultando la actividad agregada real.":"La clasificación aparecerá cuando los primeros mánagers empiecen."}</small></p></article>}
+    </section>
   );
 }
 
@@ -5325,7 +5582,15 @@ function LeagueActivityTrends({ trends }: { trends: PlayerTrend[] }) {
                     </strong>
                   </div>
                 ))}
-                {!leaders.length && <div className="empty-state"><strong>Sin actividad todavía</strong><p>Este ranking se completará con acciones reales.</p></div>}
+                {!leaders.length && (
+                  <div className="activity-empty-state">
+                    <span aria-hidden="true">↗</span>
+                    <div>
+                      <strong>Sin actividad todavía</strong>
+                      <p>Aparecerá cuando haya acciones reales confirmadas.</p>
+                    </div>
+                  </div>
+                )}
               </div>
             </article>
           );
@@ -5371,7 +5636,7 @@ function TrendPlayerRow({ player, rank }: { player: PlayerTrend; rank: number })
   );
 }
 
-function LeaguesView({ leagues, participations, featuredLeagueIds, onToggleFeaturedLeague, fantasyEvents, onOpenLeague, onJoinPublic, onJoinFantasy, onCreatePrivate, onJoinCode, joinCode, setJoinCode, notify }: { leagues: LeagueSummary[]; participations: LeagueParticipation[]; featuredLeagueIds: string[]; onToggleFeaturedLeague: (leagueId: string) => void; fantasyEvents: FantasyEvent[]; onOpenLeague: (leagueId: string) => void; onJoinPublic: () => void; onJoinFantasy: (eventId?: string) => void; onCreatePrivate: () => void; onJoinCode: (code: string) => void; joinCode: string; setJoinCode: (v: string) => void; notify: (v: string) => void }) {
+function LeaguesView({ leagues, participations, featuredLeagueIds, onToggleFeaturedLeague, fantasyEvents, onOpenLeague, onJoinPublic, onJoinFantasy, onCreatePrivate, onCareer, onJoinCode, joinCode, setJoinCode, notify }: { leagues: LeagueSummary[]; participations: LeagueParticipation[]; featuredLeagueIds: string[]; onToggleFeaturedLeague: (leagueId: string) => void; fantasyEvents: FantasyEvent[]; onOpenLeague: (leagueId: string) => void; onJoinPublic: () => void; onJoinFantasy: (eventId?: string) => void; onCreatePrivate: () => void; onCareer: () => void; onJoinCode: (code: string) => void; joinCode: string; setJoinCode: (v: string) => void; notify: (v: string) => void }) {
   const [fantasyDirectoryOpen, setFantasyDirectoryOpen] = useState(false);
   const joinedLeagueIds = new Set(participations.map((item) => item.leagueId));
 
@@ -5417,6 +5682,15 @@ function LeaguesView({ leagues, participations, featuredLeagueIds, onToggleFeatu
             <p>Crea tu mejor plantilla con presupuesto fijo y jugadores no exclusivos.</p>
           </div>
           <strong>Unirme →</strong>
+        </button>
+        <button className="mode-card career-mode-card" onClick={onCareer}>
+          <span className="mode-number">04</span>
+          <div>
+            <small>UN JUGADOR · UNA HISTORIA</small>
+            <h2>Carrera de mánager</h2>
+            <p>Elige un club real, conserva su identidad y supera la presión de cada jornada.</p>
+          </div>
+          <strong>Comenzar carrera →</strong>
         </button>
       </section>
       <section className="fantasy-event-showcase">
@@ -5632,10 +5906,10 @@ const leagueAreaTabs: { id: LeagueAreaSection; label: string; icon: string }[] =
 
 function LeagueAreaNav({ section, onChange, mobile = false }: { section: LeagueAreaSection; onChange: (section: LeagueAreaSection) => void; mobile?: boolean }) {
   return (
-    <nav className={mobile ? "bottom-nav league-mobile-nav" : "league-area-nav"} aria-label="Secciones de la liga">
+    <nav className={mobile ? "league-mobile-nav" : "league-area-nav"} aria-label="Secciones de la liga">
       {leagueAreaTabs.map((item) => (
         <button key={item.id} className={section === item.id ? "active" : ""} onClick={() => onChange(item.id)}>
-          <span>{item.icon}</span>
+          {!mobile && <span>{item.icon}</span>}
           <small>{item.label}</small>
         </button>
       ))}
@@ -5643,7 +5917,7 @@ function LeagueAreaNav({ section, onChange, mobile = false }: { section: LeagueA
   );
 }
 
-function LeagueDetailView({ league, team, participation, squad, section, onSectionChange, onBack, marketPlayers, marketRules, backendMarketEnabled, rankingRows, privateRules, canManagePrivateLeague, privateAdmin, privateParticipants, onManagePrivateLeague, reports, onReport, onResolveReport, onLeaveLeague, bids, onChangeBids, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, scoringRules, settlementRules, fixtures, fantasyLineup, previousFantasyLineup, fantasyEvent, onSaveFantasyLineup, onAdjustBudget, onImmediateSale, notify }: { league: LeagueSummary; team: FantasyTeamSummary; participation?: LeagueParticipation; squad?: InitialSquad; section: LeagueAreaSection; onSectionChange: (section: LeagueAreaSection) => void; onBack: () => void; marketPlayers: MarketPlayer[]; marketRules: MarketRules; backendMarketEnabled: boolean; rankingRows: NexoLeagueRankingRow[]; privateRules?: PrivateLeagueRules; canManagePrivateLeague: boolean; privateAdmin?: PrivateLeagueParticipant; privateParticipants: PrivateLeagueParticipant[]; onManagePrivateLeague: () => void; reports: LeagueReport[]; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeaveLeague: (successorId?: string) => Promise<string | null>; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; fixtures: MatchFixture[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; fantasyEvent?: FantasyEvent; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => Promise<void> | void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; notify: (message: string) => void }) {
+function LeagueDetailView({ league, team, participation, squad, section, onSectionChange, onBack, marketPlayers, marketRules, backendMarketEnabled, rankingRows, privateRules, canManagePrivateLeague, privateAdmin, privateParticipants, onManagePrivateLeague, reports, onReport, onResolveReport, onLeaveLeague, bids, onChangeBids, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, scoringRules, settlementRules, matchdayHistory, fixtures, fantasyLineup, previousFantasyLineup, fantasyEvent, onSaveFantasyLineup, onAdjustBudget, onImmediateSale, notify }: { league: LeagueSummary; team: FantasyTeamSummary; participation?: LeagueParticipation; squad?: InitialSquad; section: LeagueAreaSection; onSectionChange: (section: LeagueAreaSection) => void; onBack: () => void; marketPlayers: MarketPlayer[]; marketRules: MarketRules; backendMarketEnabled: boolean; rankingRows: NexoLeagueRankingRow[]; privateRules?: PrivateLeagueRules; canManagePrivateLeague: boolean; privateAdmin?: PrivateLeagueParticipant; privateParticipants: PrivateLeagueParticipant[]; onManagePrivateLeague: () => void; reports: LeagueReport[]; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeaveLeague: (successorId?: string) => Promise<string | null>; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; matchdayHistory: NexoMatchdayHistory[]; fixtures: MatchFixture[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; fantasyEvent?: FantasyEvent; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => Promise<void> | void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; notify: (message: string) => void }) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const starters = squad?.players.filter((player) => squad.startingPlayerIds.includes(player.id)) ?? [];
   const ownedMarketListings = (squad?.players ?? []).flatMap((player) => {
@@ -5686,7 +5960,7 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
       </header>
       <LeagueAreaNav section={section} onChange={onSectionChange} />
 
-      {section === "resumen" && <LeagueOverview league={league} team={team} squad={squad} budget={participation?.budget ?? 100} fantasyEvent={fantasyEvent} fantasyLineup={fantasyLineup} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} privateParticipants={privateParticipants} backendEnabled={backendMarketEnabled} rankingRows={rankingRows} onSectionChange={onSectionChange} />}
+      {section === "resumen" && <LeagueOverview league={league} team={team} squad={squad} budget={participation?.budget ?? 100} fantasyEvent={fantasyEvent} fantasyLineup={fantasyLineup} history={matchdayHistory.filter((item) => item.membershipId === participation?.id)} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} privateParticipants={privateParticipants} backendEnabled={backendMarketEnabled} rankingRows={rankingRows} onSectionChange={onSectionChange} />}
       {section === "equipo" && fantasyEvent && !fantasyEvent.snapshot && (
         <article className="matchday-pending-state">
           <span>◷</span>
@@ -5694,16 +5968,16 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
           <p>Podrás montar el once cuando se cierre la Jornada {fantasyEvent.previousMatchday} y el backend congele los valores de mercado de los clubes incluidos.</p>
         </article>
       )}
-      {section === "equipo" && (!fantasyEvent || fantasyEvent.snapshot) && <LeagueSquadView squad={squad} starters={starters} league={league} marketPlayers={fantasyScopedPlayers} fixtures={fixtures} participationId={participation?.id ?? ""} budget={participation?.budget ?? 0} fantasyMatchdayBudget={fantasyEvent?.snapshot?.budget ?? marketRules.fantasyMatchdayBudget} fantasyOptions={marketRules} fantasyEvent={fantasyEvent} scoringRules={scoringRules} fantasyLineup={fantasyLineup} previousFantasyLineup={previousFantasyLineup} onSaveFantasyLineup={onSaveFantasyLineup} playerContracts={playerContracts} playerOffers={playerOffers} onChangePlayerContract={onChangePlayerContract} onCreatePlayerOffer={onCreatePlayerOffer} onRespondPlayerOffer={onRespondPlayerOffer} onAdjustBudget={onAdjustBudget} onImmediateSale={onImmediateSale} backendEnabled={backendMarketEnabled} notify={notify} />}
+      {section === "equipo" && (!fantasyEvent || fantasyEvent.snapshot) && <LeagueSquadView squad={squad} starters={starters} league={league} marketPlayers={fantasyScopedPlayers} fixtures={fixtures} participationId={participation?.id ?? ""} history={matchdayHistory.filter((item) => item.membershipId === participation?.id)} budget={participation?.budget ?? 0} fantasyMatchdayBudget={fantasyEvent?.snapshot?.budget ?? marketRules.fantasyMatchdayBudget} fantasyOptions={marketRules} fantasyEvent={fantasyEvent} scoringRules={scoringRules} fantasyLineup={fantasyLineup} previousFantasyLineup={previousFantasyLineup} onSaveFantasyLineup={onSaveFantasyLineup} playerContracts={playerContracts} playerOffers={playerOffers} onChangePlayerContract={onChangePlayerContract} onCreatePlayerOffer={onCreatePlayerOffer} onRespondPlayerOffer={onRespondPlayerOffer} onAdjustBudget={onAdjustBudget} onImmediateSale={onImmediateSale} backendEnabled={backendMarketEnabled} notify={notify} />}
       {section === "mercado" && <LeagueMarketView league={league} players={fantasyScopedPlayers} squad={squad} budget={participation?.budget ?? 100} rules={marketRules} backendEnabled={backendMarketEnabled} bids={bids} onChangeBids={onChangeBids} ownedListings={ownedMarketListings} receivedOffers={receivedMarketOffers} onRespondOffer={onRespondPlayerOffer} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} onGenerateSystemOffers={() => ownedMarketListings.forEach(({ player }) => onCreatePlayerOffer(player, "game"))} notify={notify} />}
-      {section === "jornada" && <LeagueMatchdayView squad={squad} competition={league.competition} fixtures={fixtures} scoringRules={scoringRules} settlementRules={settlementRules} onPrepareTeam={() => onSectionChange("equipo")} notify={notify} />}
+      {section === "jornada" && <LeagueMatchdayView squad={squad} competition={league.competition} fixtures={fixtures} scoringRules={scoringRules} settlementRules={settlementRules} history={matchdayHistory.filter((item) => item.membershipId === participation?.id)} onPrepareTeam={() => onSectionChange("equipo")} notify={notify} />}
       {section === "clasificacion" && <LeagueRankingView leagueId={league.id} team={team} competition={league.competition} rankingRows={rankingRows} backendEnabled={backendMarketEnabled} budget={participation?.budget ?? 0} rules={marketRules} bidCommitment={bids.reduce((total, bid) => total + bid.amount, 0)} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={onClausePurchase} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} currentUserIsAdmin={canManagePrivateLeague} privateAdmin={privateAdmin} onReport={onReport} notify={notify} />}
       {optionsOpen && <LeagueOptionsDialog league={league} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} isAdmin={canManagePrivateLeague} participants={privateParticipants} reports={reports} onManage={() => { setOptionsOpen(false); onManagePrivateLeague(); }} onResolveReport={onResolveReport} onLeave={onLeaveLeague} onClose={() => setOptionsOpen(false)} />}
     </>
   );
 }
 
-function LeagueOverview({ league, team, squad, budget, fantasyEvent, fantasyLineup, isPrivateLeague, privateParticipants, backendEnabled, rankingRows, onSectionChange }: { league: LeagueSummary; team: FantasyTeamSummary; squad?: InitialSquad; budget: number; fantasyEvent?: FantasyEvent; fantasyLineup?: FantasyLineupDraft; isPrivateLeague: boolean; privateParticipants: PrivateLeagueParticipant[]; backendEnabled: boolean; rankingRows: NexoLeagueRankingRow[]; onSectionChange: (section: LeagueAreaSection) => void }) {
+function LeagueOverview({ league, team, squad, budget, fantasyEvent, fantasyLineup, history, isPrivateLeague, privateParticipants, backendEnabled, rankingRows, onSectionChange }: { league: LeagueSummary; team: FantasyTeamSummary; squad?: InitialSquad; budget: number; fantasyEvent?: FantasyEvent; fantasyLineup?: FantasyLineupDraft; history: NexoMatchdayHistory[]; isPrivateLeague: boolean; privateParticipants: PrivateLeagueParticipant[]; backendEnabled: boolean; rankingRows: NexoLeagueRankingRow[]; onSectionChange: (section: LeagueAreaSection) => void }) {
   const [activityOpen, setActivityOpen] = useState(false);
   const [backendActivity, setBackendActivity] = useState<NexoLeagueActivityEntry[]>([]);
   useEffect(() => {
@@ -5720,18 +5994,19 @@ function LeagueOverview({ league, team, squad, budget, fantasyEvent, fantasyLine
     ? backendActivity.map((entry) => ({ id: entry.id, type: entry.activityType, actor: entry.actor, initials: entry.initials, title: entry.title, detail: entry.detail, createdAt: Date.parse(entry.occurredAt) }))
     : createPrivateLeagueActivity(privateParticipants);
   const currentRanking = rankingRows.find((row) => row.teamId === team.id);
+  const latestClosed = [...history].filter((item) => item.state === "closed").sort((a, b) => b.matchday - a.matchday)[0];
   const nearbyRanking = backendEnabled ? rankingRows.filter((row) => row.teamId !== team.id).slice(0, 3) : [];
   if (fantasyEvent) return <FantasyChallengeOverview league={league} event={fantasyEvent} lineup={fantasyLineup} onSectionChange={onSectionChange} />;
   return (
     <div className="league-overview">
       <section className="league-welcome-card">
         <div>
-          <span className="league-ready">✓ TODO LISTO</span>
-          <p className="eyebrow">BIENVENIDO A TU NUEVA LIGA</p>
-          <h2>{squad ? "Tu plantilla está preparada" : "Tu liga está en marcha"}</h2>
-          <p>{squad ? "Tus 16 jugadores están confirmados. Revisa el once inicial antes de que comience la jornada." : `Compite con ${team.name}, prepara tu once y escala posiciones.`}</p>
-          <button className="primary-button" onClick={() => onSectionChange("equipo")}>
-            Revisar mi equipo <span>→</span>
+          <span className="league-ready">✓ {latestClosed ? `JORNADA ${latestClosed.matchday} CERRADA` : "TODO LISTO"}</span>
+          <p className="eyebrow">{latestClosed ? "RESULTADO CONFIRMADO" : "BIENVENIDO A TU NUEVA LIGA"}</p>
+          <h2>{latestClosed ? `${latestClosed.points} puntos confirmados` : squad ? "Tu plantilla está preparada" : "Tu liga está en marcha"}</h2>
+          <p>{latestClosed ? `El once de la Jornada ${latestClosed.matchday}, sus puntos y la liquidación ya forman parte del historial.` : squad ? "Tus 16 jugadores están confirmados. Revisa el once inicial antes de que comience la jornada." : `Compite con ${team.name}, prepara tu once y escala posiciones.`}</p>
+          <button className="primary-button" onClick={() => onSectionChange(latestClosed ? "jornada" : "equipo")}>
+            {latestClosed ? "Ver resultado" : "Revisar mi equipo"} <span>→</span>
           </button>
         </div>
         <div className="league-rank-hero">
@@ -5805,13 +6080,13 @@ function LeagueOverview({ league, team, squad, budget, fantasyEvent, fantasyLine
         </article>
         <article className="league-panel matchday-preview">
           <div>
-            <p className="eyebrow">JORNADA 1</p>
-            <h2>Empieza el viernes</h2>
-            <p>Las estadísticas aparecerán cuando terminen los partidos.</p>
+            <p className="eyebrow">{latestClosed ? `JORNADA ${latestClosed.matchday} · FINALIZADA` : "JORNADA 1"}</p>
+            <h2>{latestClosed ? `${latestClosed.points} puntos y +${latestClosed.payout.toFixed(1).replace(".", ",")} M` : "Empieza el viernes"}</h2>
+            <p>{latestClosed ? "Consulta el once congelado, cada puntuación y la clasificación de la jornada." : "Las estadísticas aparecerán cuando terminen los partidos."}</p>
           </div>
           <div className="matchday-time">
-            <strong>6</strong>
-            <span>días</span>
+            <strong>{latestClosed ? latestClosed.rank ?? "—" : 6}</strong>
+            <span>{latestClosed ? "puesto" : "días"}</span>
           </div>
           <button className="secondary-button" onClick={() => onSectionChange("jornada")}>
             Ver jornada
@@ -5900,7 +6175,7 @@ function FantasyChallengeOverview({ league, event, lineup, onSectionChange }: { 
   const firstFixture = event.fixtures[0];
   const headline = budgetPending ? "Ya estás dentro del reto" : lineupSaved ? "Tu alineación está guardada" : "Crea tu primer once";
   const description = budgetPending
-    ? `El presupuesto se calculará al cerrar la Jornada ${event.previousMatchday}. Hasta entonces no puedes montar el once.`
+    ? `El presupuesto se calculará al cerrar ${event.competition} · Jornada ${event.previousMatchday}. Hasta entonces no puedes montar el once.`
     : lineupSaved
       ? "Tu once y tu capitán están guardados. Puedes revisarlos mientras el reto siga abierto."
       : `Ya tienes ${event.snapshot!.budget.toFixed(1).replace(".", ",")} M de presupuesto congelado para montar el once.`;
@@ -5922,7 +6197,7 @@ function FantasyChallengeOverview({ league, event, lineup, onSectionChange }: { 
         <div className="league-rank-hero">
           <small>ESTADO DEL RETO</small>
           <strong>{status}</strong>
-          <span>{budgetPending ? `Se activará al cerrar J${event.previousMatchday}` : league.rank === "—" ? "0 pts · sin clasificar" : `${league.rank} · 0 pts`}</span>
+          <span>{budgetPending ? `Espera ${event.competition} · J${event.previousMatchday}` : league.rank === "—" ? "0 pts · sin clasificar" : `${league.rank} · 0 pts`}</span>
         </div>
       </section>
 
@@ -6147,7 +6422,7 @@ function PrivateLeagueActivityDialog({ events, leagueName, onClose }: { events: 
   );
 }
 
-function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, participationId, budget, fantasyMatchdayBudget, fantasyOptions, fantasyEvent, scoringRules, fantasyLineup, previousFantasyLineup, onSaveFantasyLineup, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, onAdjustBudget, onImmediateSale, backendEnabled, notify }: { squad?: InitialSquad; starters: InitialSquadPlayer[]; league: LeagueSummary; marketPlayers: MarketPlayer[]; fixtures: MatchFixture[]; participationId: string; budget: number; fantasyMatchdayBudget: number; fantasyOptions: MarketRules; fantasyEvent?: FantasyEvent; scoringRules: ScoringRule[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => Promise<void> | void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; backendEnabled: boolean; notify: (message: string) => void }) {
+function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, participationId, history, budget, fantasyMatchdayBudget, fantasyOptions, fantasyEvent, scoringRules, fantasyLineup, previousFantasyLineup, onSaveFantasyLineup, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, onAdjustBudget, onImmediateSale, backendEnabled, notify }: { squad?: InitialSquad; starters: InitialSquadPlayer[]; league: LeagueSummary; marketPlayers: MarketPlayer[]; fixtures: MatchFixture[]; participationId: string; history: NexoMatchdayHistory[]; budget: number; fantasyMatchdayBudget: number; fantasyOptions: MarketRules; fantasyEvent?: FantasyEvent; scoringRules: ScoringRule[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => Promise<void> | void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; backendEnabled: boolean; notify: (message: string) => void }) {
   const formations: Record<string, Record<PlayerPosition, number>> = {
     "4-4-2": { POR: 1, DEF: 4, MED: 4, DEL: 2 },
     "4-3-3": { POR: 1, DEF: 4, MED: 3, DEL: 3 },
@@ -6242,7 +6517,12 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, par
         </div>
       </section>
     );
-  if (selectedTeamMatchday !== activeMatchday) return <ScheduledTeamMatchdayView matchday={selectedTeamMatchday} onSelectMatchday={setSelectedTeamMatchday} />;
+  if (selectedTeamMatchday !== activeMatchday) {
+    const historical = history.find((item) => item.matchday === selectedTeamMatchday);
+    return historical
+      ? <LockedTeamMatchdayView squad={squad} competition={league.competition} history={historical} allHistory={history} editableMatchday={activeMatchday} scoringRules={scoringRules} onSelectMatchday={setSelectedTeamMatchday} />
+      : <ScheduledTeamMatchdayView matchday={selectedTeamMatchday} history={history} editableMatchday={activeMatchday} onSelectMatchday={setSelectedTeamMatchday} />;
+  }
 
   const currentStarters = squad.players.filter((player) => starterIds.includes(player.id));
   const currentBench = squad.players.filter((player) => !starterIds.includes(player.id));
@@ -6312,7 +6592,7 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, par
           {saved ? "✓ Alineación guardada" : "Guardar alineación"}
         </button>
       </div>
-      <TeamMatchdaySelector selected={selectedTeamMatchday} onSelect={setSelectedTeamMatchday} editableMatchday={activeMatchday} />
+      <TeamMatchdaySelector selected={selectedTeamMatchday} onSelect={setSelectedTeamMatchday} editableMatchday={activeMatchday} history={history} />
       <div className="lineup-process">
         <span className="complete">
           1 <b>Formación</b>
@@ -6490,7 +6770,7 @@ function FantasyBudgetPending({ event }: { event: FantasyEvent }) {
     <section className="league-tab-view fantasy-budget-pending">
       <span>◷</span>
       <p className="eyebrow">INSCRIPCIÓN CONFIRMADA · PRECIOS PENDIENTES</p>
-      <h2>Tu presupuesto se publicará al cerrar la Jornada {event.previousMatchday}</h2>
+      <h2>Tu presupuesto se publicará al cerrar {event.competition} · Jornada {event.previousMatchday}</h2>
       <p>En ese momento calcularemos los valores fantásticos semanales, congelaremos una única versión para todos y abriremos el constructor del equipo.</p>
       <div>
         <strong>{event.name}</strong>
@@ -7161,20 +7441,22 @@ function FantasyFormationChangeDialog({ currentFormation, targetFormation, targe
   );
 }
 
-function TeamMatchdaySelector({ selected, onSelect, editableMatchday = CURRENT_MATCHDAY }: { selected: number; onSelect: (matchday: number) => void; editableMatchday?: number }) {
+function TeamMatchdaySelector({ selected, onSelect, editableMatchday = CURRENT_MATCHDAY, history = [] }: { selected: number; onSelect: (matchday: number) => void; editableMatchday?: number; history?: NexoMatchdayHistory[] }) {
   return (
     <nav className="team-matchday-selector" aria-label="Alineaciones por jornada">
       {[1, 2, 3, 4, 5].map((matchday) => {
-        const completed = COMPLETED_MATCHDAYS.has(matchday);
+        const historical = history.find((item) => item.matchday === matchday);
+        const completed = historical?.state === "closed" || COMPLETED_MATCHDAYS.has(matchday);
+        const locked = Boolean(historical) && !completed;
         const editable = matchday === editableMatchday;
         return (
-          <button className={`${selected === matchday ? "active" : ""} ${editable ? "draft" : completed ? "locked" : "scheduled"}`} key={matchday} onClick={() => onSelect(matchday)}>
-            <span>{editable ? "✎" : completed ? "✓" : "◷"}</span>
+          <button className={`${selected === matchday ? "active" : ""} ${editable ? "draft" : completed || locked ? "locked" : "scheduled"}`} key={matchday} onClick={() => onSelect(matchday)}>
+            <span>{editable ? "✎" : completed ? "✓" : locked ? "◉" : "◷"}</span>
             <div>
               <small>JORNADA {matchday}</small>
-              <strong>{editable ? "En preparación" : completed ? "Finalizada" : "Programada"}</strong>
+              <strong>{editable ? "En preparación" : completed ? "Finalizada" : locked ? "Bloqueada" : "Programada"}</strong>
             </div>
-            {editable ? <em>EDITAR</em> : completed ? <em>VER PUNTOS</em> : <em>PRÓXIMA</em>}
+            {editable ? <em>EDITAR</em> : completed ? <em>{historical?.points ?? 0} PTS</em> : locked ? <em>CONSULTAR</em> : <em>PRÓXIMA</em>}
           </button>
         );
       })}
@@ -7182,7 +7464,7 @@ function TeamMatchdaySelector({ selected, onSelect, editableMatchday = CURRENT_M
   );
 }
 
-function ScheduledTeamMatchdayView({ matchday, onSelectMatchday }: { matchday: number; onSelectMatchday: (matchday: number) => void }) {
+function ScheduledTeamMatchdayView({ matchday, history, editableMatchday, onSelectMatchday }: { matchday: number; history: NexoMatchdayHistory[]; editableMatchday: number; onSelectMatchday: (matchday: number) => void }) {
   return (
     <section className="league-tab-view locked-team-matchday">
       <div className="league-section-heading">
@@ -7192,33 +7474,35 @@ function ScheduledTeamMatchdayView({ matchday, onSelectMatchday }: { matchday: n
           <p>Esta jornada se podrá preparar cuando el calendario oficial habilite su ventana.</p>
         </div>
       </div>
-      <TeamMatchdaySelector selected={matchday} onSelect={onSelectMatchday} />
+      <TeamMatchdaySelector selected={matchday} onSelect={onSelectMatchday} editableMatchday={editableMatchday} history={history} />
       <div className="empty-state league-empty">
         <strong>Sin alineación ni puntos</strong>
         <p>No se mostrará información deportiva hasta que la jornada corresponda y sus partidos hayan finalizado.</p>
-        <button className="primary-button" onClick={() => onSelectMatchday(CURRENT_MATCHDAY)}>
-          Preparar Jornada {CURRENT_MATCHDAY}
+        <button className="primary-button" onClick={() => onSelectMatchday(editableMatchday)}>
+          Preparar Jornada {editableMatchday}
         </button>
       </div>
     </section>
   );
 }
 
-function LockedTeamMatchdayView({ squad, competition, matchday, scoringRules, onSelectMatchday }: { squad: InitialSquad; competition: CompetitionName; matchday: number; scoringRules: ScoringRule[]; onSelectMatchday: (matchday: number) => void }) {
+function LockedTeamMatchdayView({ squad, competition, history, allHistory, editableMatchday, scoringRules, onSelectMatchday }: { squad: InitialSquad; competition: CompetitionName; history: NexoMatchdayHistory; allHistory: NexoMatchdayHistory[]; editableMatchday: number; scoringRules: ScoringRule[]; onSelectMatchday: (matchday: number) => void }) {
   const [selectedPlayer, setSelectedPlayer] = useState<InitialSquadPlayer | null>(null);
-  const formations = ["4-4-2", "4-3-3", "3-5-2", "4-4-2"];
-  const formation = formations[matchday - 1] ?? "4-4-2";
-  const starters = squad.players.filter((player) => squad.startingPlayerIds.includes(player.id));
-  const bench = squad.players.filter((player) => !squad.startingPlayerIds.includes(player.id));
-  const captain = starters.find((player) => player.position === "DEL") ?? starters[0];
-  const scoreFor = (player: InitialSquadPlayer) => calculatePlayerPoints(demoPlayerMatchStats(`${player.id}_j${matchday}`, player.position), player.position, scoringRules).total;
-  const total = starters.reduce((sum, player) => sum + scoreFor(player), 0);
+  const matchday = history.matchday;
+  const formation = history.formation;
+  const toPlayer = (entry: NexoMatchdayHistory["players"][number]) => squad.players.find((player) => player.id === entry.playerId) ?? ({ id: entry.playerId, name: entry.name, initials: entry.initials, position: entry.position, club: entry.club, price: 0, points: entry.rawPoints, photoUrl: entry.photoUrl } as InitialSquadPlayer);
+  const starters = history.players.filter((entry) => entry.role === "starter").map(toPlayer);
+  const bench = history.players.filter((entry) => entry.role === "bench").map(toPlayer);
+  const captainEntry = history.players.find((entry) => entry.isCaptain);
+  const captain = captainEntry ? toPlayer(captainEntry) : starters[0];
+  const scoreFor = (player: InitialSquadPlayer) => history.players.find((entry) => entry.playerId === player.id)?.points ?? 0;
+  const total = history.points;
   return (
     <section className="league-tab-view locked-team-matchday">
       <div className="league-section-heading">
         <div>
           <p className="eyebrow">JORNADA {matchday} · COPIA CERRADA</p>
-          <h2>Alineación bloqueada</h2>
+          <h2>{history.state === "closed" ? "Alineación cerrada" : "Alineación bloqueada"}</h2>
           <p>Este es el equipo utilizado para puntuar. Ya no se puede modificar.</p>
         </div>
         <div className="locked-matchday-total">
@@ -7226,14 +7510,14 @@ function LockedTeamMatchdayView({ squad, competition, matchday, scoringRules, on
           <strong>{total} pts</strong>
         </div>
       </div>
-      <TeamMatchdaySelector selected={matchday} onSelect={onSelectMatchday} />
+      <TeamMatchdaySelector selected={matchday} onSelect={onSelectMatchday} editableMatchday={editableMatchday} history={allHistory} />
       <article className="locked-team-banner">
         <span>◉</span>
         <div>
           <strong>Solo consulta</strong>
           <p>Los fichajes, ventas y cambios actuales no alteran esta fotografía histórica. Puedes abrir cualquier jugador para revisar sus puntos.</p>
         </div>
-        <button onClick={() => onSelectMatchday(5)}>Preparar Jornada 5 →</button>
+        <button onClick={() => onSelectMatchday(editableMatchday)}>Preparar Jornada {editableMatchday} →</button>
       </article>
       <div className="locked-lineup-layout">
         <article className="pitch-card">
@@ -9256,7 +9540,7 @@ function BidDialog({ player, existingBid, committed, budget, spendingLimit, debt
   );
 }
 
-function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoringRules, settlementRules, onPrepareTeam, notify }: { squad?: InitialSquad; competition: CompetitionName; fixtures: MatchFixture[]; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; onPrepareTeam: () => void; notify: (message: string) => void }) {
+function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoringRules, settlementRules, history, onPrepareTeam, notify }: { squad?: InitialSquad; competition: CompetitionName; fixtures: MatchFixture[]; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; history: NexoMatchdayHistory[]; onPrepareTeam: () => void; notify: (message: string) => void }) {
   const competitionFixtures = allFixtures.filter((fixture) => fixture.competition === competition);
   const roundNumbers = competitionFixtures.length ? Array.from(new Set(competitionFixtures.map((fixture) => fixture.matchday))).sort((a, b) => a - b) : [1, 2, 3, 4, 5];
   const matchdays = roundNumbers.map((number) => {
@@ -9278,14 +9562,37 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
   const [expandedFixture, setExpandedFixture] = useState<string | null>(null);
   const selected = matchdays.find((item) => item.number === selectedMatchday) ?? matchdays[0];
   const finalized = selected.status === "Finalizada" || selected.status === "Recalculada";
-  const starters = (squad?.players ?? []).filter((player) => squad?.startingPlayerIds.includes(player.id));
-  const bench = (squad?.players ?? []).filter((player) => !squad?.startingPlayerIds.includes(player.id));
-  const captain = starters.find((player) => player.position === "DEL") ?? starters[0];
+  const selectedHistory = history.find((item) => item.matchday === selected.number);
+  const latestClosedMatchday = Math.max(0, ...history.filter((item) => item.state === "closed").map((item) => item.matchday));
+  const historicalPlayer = (entry: NexoMatchdayHistory["players"][number]) =>
+    squad?.players.find((player) => player.id === entry.playerId) ?? ({
+      id: entry.playerId,
+      name: entry.name,
+      initials: entry.initials,
+      position: entry.position,
+      club: entry.club,
+      price: 0,
+      points: entry.rawPoints,
+      photoUrl: entry.photoUrl,
+    } as InitialSquadPlayer);
+  const starters = selectedHistory
+    ? selectedHistory.players.filter((entry) => entry.role === "starter").map(historicalPlayer)
+    : (squad?.players ?? []).filter((player) => squad?.startingPlayerIds.includes(player.id));
+  const bench = selectedHistory
+    ? selectedHistory.players.filter((entry) => entry.role === "bench").map(historicalPlayer)
+    : (squad?.players ?? []).filter((player) => !squad?.startingPlayerIds.includes(player.id));
+  const captain = selectedHistory?.players.length
+    ? historicalPlayer(selectedHistory.players.find((entry) => entry.isCaptain) ?? selectedHistory.players[0])
+    : starters.find((player) => player.position === "DEL") ?? starters[0];
 
   function pointsFor(player: InitialSquadPlayer, matchday: number) {
+    const saved = history.find((item) => item.matchday === matchday)?.players.find((entry) => entry.playerId === player.id);
+    if (saved) return saved.points;
     return calculatePlayerPoints(demoPlayerMatchStats(`${player.id}_j${matchday}`, player.position), player.position, scoringRules).total;
   }
   function totalFor(matchday: number) {
+    const saved = history.find((item) => item.matchday === matchday);
+    if (saved) return saved.points;
     return starters.reduce((total, player) => total + pointsFor(player, matchday), 0);
   }
 
@@ -9302,8 +9609,11 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
     }))
     .sort((a, b) => b.score - a.score);
   const teamTotal = finalized ? totalFor(selected.number) : 0;
-  const payout = Math.min(settlementRules.maximumPayout, Math.max(settlementRules.minimumPayout, Math.max(0, teamTotal) * settlementRules.moneyPerPoint));
-  const positionChange = selected.previousRank - selected.rank;
+  const payout = selectedHistory?.payout ?? Math.min(settlementRules.maximumPayout, Math.max(settlementRules.minimumPayout, Math.max(0, teamTotal) * settlementRules.moneyPerPoint));
+  const selectedRank = selectedHistory?.rank ?? selected.rank;
+  const selectedAverage = selectedHistory?.leagueAverage ?? selected.leagueAverage;
+  const selectedBestScore = selectedHistory?.bestScore ?? selected.bestScore;
+  const positionChange = selected.previousRank - selectedRank;
   const normalizeClub = (value = "") => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es").replace(/\b(cf|fc|sad|de futbol|futbol club|club de futbol)\b/g, "").replace(/[^a-z0-9]/g, "");
   const fixtures = competitionFixtures.filter((fixture) => fixture.matchday === selected.number).map((fixture) => {
     const clubKeys = new Set([normalizeClub(fixture.home), normalizeClub(fixture.away)]);
@@ -9326,15 +9636,15 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
       </div>
       <section className="overlapping-matchdays">
         <div className="overlap-heading">
-          <p className="eyebrow">TEMPORADA TODAVÍA NO INICIADA</p>
-          <h3>La Jornada 1 es la única abierta</h3>
+          <p className="eyebrow">{latestClosedMatchday ? `JORNADA ${latestClosedMatchday} CERRADA` : "TEMPORADA TODAVÍA NO INICIADA"}</p>
+          <h3>{latestClosedMatchday ? "El histórico queda guardado y la siguiente jornada se puede preparar" : "La Jornada 1 es la única abierta"}</h3>
         </div>
         <article className="urgent">
-          <span>J1</span>
+          <span>J{latestClosedMatchday ? latestClosedMatchday + 1 : 1}</span>
           <div>
             <small>BORRADOR DISPONIBLE</small>
-            <strong>Prepara tu primer once</strong>
-            <p>No habrá puntos ni una copia cerrada hasta que comiencen y finalicen los partidos oficiales.</p>
+            <strong>{latestClosedMatchday ? `Prepara la Jornada ${latestClosedMatchday + 1}` : "Prepara tu primer once"}</strong>
+            <p>{latestClosedMatchday ? `La Jornada ${latestClosedMatchday} permanece en modo consulta con su once y puntos definitivos.` : "No habrá puntos ni una copia cerrada hasta que comiencen y finalicen los partidos oficiales."}</p>
           </div>
           <button onClick={onPrepareTeam}>Preparar equipo →</button>
         </article>
@@ -9486,23 +9796,23 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
             <div className="matchday-total-score">
               <small>PUNTOS JORNADA {selected.number}</small>
               <strong>{teamTotal}</strong>
-              <span>{teamTotal >= selected.leagueAverage ? `+${teamTotal - selected.leagueAverage} sobre la media` : `${teamTotal - selected.leagueAverage} bajo la media`}</span>
+              <span>{teamTotal >= selectedAverage ? `+${teamTotal - selectedAverage} sobre la media` : `${teamTotal - selectedAverage} bajo la media`}</span>
             </div>
             <div className="matchday-result-kpis">
               <article>
                 <small>POSICIÓN JORNADA</small>
-                <strong>{selected.rank}.º</strong>
+                <strong>{selectedRank}.º</strong>
                 <span className={positionChange >= 0 ? "positive" : "negative"}>{positionChange > 0 ? `↑ ${positionChange} puestos` : positionChange < 0 ? `↓ ${Math.abs(positionChange)} puestos` : "Sin cambios"}</span>
               </article>
               <article>
                 <small>MEDIA DE LA LIGA</small>
-                <strong>{selected.leagueAverage}</strong>
-                <span>{teamTotal >= selected.leagueAverage ? "Por encima" : "Por debajo"}</span>
+                <strong>{selectedAverage}</strong>
+                <span>{teamTotal >= selectedAverage ? "Por encima" : "Por debajo"}</span>
               </article>
               <article>
                 <small>MEJOR PUNTUACIÓN</small>
-                <strong>{selected.bestScore}</strong>
-                <span>{selected.bestScore - teamTotal} puntos de diferencia</span>
+                <strong>{selectedBestScore}</strong>
+                <span>{selectedBestScore - teamTotal} puntos de diferencia</span>
               </article>
             </div>
             <div className="matchday-evolution">
@@ -9544,7 +9854,7 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
           <article className="closed-lineup-banner">
             <span>✓</span>
             <div>
-              <strong>Once confirmado · {selected.formation}</strong>
+              <strong>Once confirmado · {selectedHistory?.formation ?? selected.formation}</strong>
               <p>Esta es la copia inmutable utilizada para calcular la jornada. Capitán: {captain?.name}.</p>
             </div>
             <em>VERSIÓN DE REGLAS #{selected.number}</em>
@@ -9624,7 +9934,7 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
           <h3>{selected.status === "Pendiente" ? "Jornada todavía en juego" : "Jornada aún no iniciada"}</h3>
           <p>{selected.status === "Pendiente" ? "Los puntos permanecerán pendientes hasta que la API confirme todos los partidos como finalizados." : "El once confirmado y sus puntos aparecerán cuando llegue esta jornada."}</p>
           <div>
-            <strong>{selected.formation}</strong>
+            <strong>{selectedHistory?.formation ?? selected.formation}</strong>
             <span>Formación preparada</span>
           </div>
         </section>
@@ -11924,13 +12234,14 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
   );
 }
 
-function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, economyRules, setEconomyRules, settlementRules, setSettlementRules, onboardingConfig, onForceOnboarding, legalConfig, onPublishLegalVersion, scoringRules, onChangeScoringRules, teams, leagues, participations, squads, bids, playerContracts, playerOffers, sentOffers, playerCatalog, matchFixtures, matchdays, simulationEnabled, catalogSyncEnabled, onCatalogSyncApplied, onSavePlayer, fantasyEvents, onCreateFantasyEvent, onSnapshotFantasyEvent, onOpenLeague, onRenewMarket, notify }: { marketRules: MarketRules; setMarketRules: (rules: MarketRules) => void; clubRules: ClubRules; setClubRules: (rules: ClubRules) => void; economyRules: EconomyRules; setEconomyRules: (rules: EconomyRules) => void; settlementRules: MatchdaySettlementRules; setSettlementRules: (rules: MatchdaySettlementRules) => void; onboardingConfig: OnboardingConfig; onForceOnboarding: (reason: string) => void; legalConfig: LegalConfig; onPublishLegalVersion: (kind: "privacy" | "terms", changeSummary: string) => void; scoringRules: ScoringRule[]; onChangeScoringRules: (rules: ScoringRule[]) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; squads: Record<string, InitialSquad>; bids: Record<string, MarketBid[]>; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; sentOffers: Record<string, SentOffer[]>; playerCatalog: Record<CompetitionName, CompetitionPlayer[]>; matchFixtures: MatchFixture[]; matchdays: NexoMatchdayState[]; simulationEnabled: boolean; catalogSyncEnabled: boolean; onCatalogSyncApplied: () => Promise<void>; onSavePlayer: (player: CompetitionPlayer) => Promise<void>; fantasyEvents: FantasyEvent[]; onCreateFantasyEvent: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshotFantasyEvent: (eventId: string) => Promise<void> | void; onOpenLeague: (leagueId: string) => void; onRenewMarket: (leagueId: string) => Promise<void> | void; notify: (v: string) => void }) {
+function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, careerRules, setCareerRules, onSaveCareerRules, careers, economyRules, setEconomyRules, settlementRules, setSettlementRules, onboardingConfig, onForceOnboarding, legalConfig, onPublishLegalVersion, scoringRules, onChangeScoringRules, teams, leagues, participations, squads, bids, playerContracts, playerOffers, sentOffers, playerCatalog, matchFixtures, matchdays, simulationEnabled, catalogSyncEnabled, onCatalogSyncApplied, onSavePlayer, fantasyEvents, onCreateFantasyEvent, onSnapshotFantasyEvent, onOpenLeague, onRenewMarket, notify }: { marketRules: MarketRules; setMarketRules: (rules: MarketRules) => void; clubRules: ClubRules; setClubRules: (rules: ClubRules) => void; careerRules: CareerRules; setCareerRules: (rules: CareerRules) => void; onSaveCareerRules: (rules: CareerRules) => Promise<void>; careers: NexoCareer[]; economyRules: EconomyRules; setEconomyRules: (rules: EconomyRules) => void; settlementRules: MatchdaySettlementRules; setSettlementRules: (rules: MatchdaySettlementRules) => void; onboardingConfig: OnboardingConfig; onForceOnboarding: (reason: string) => void; legalConfig: LegalConfig; onPublishLegalVersion: (kind: "privacy" | "terms", changeSummary: string) => void; scoringRules: ScoringRule[]; onChangeScoringRules: (rules: ScoringRule[]) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; squads: Record<string, InitialSquad>; bids: Record<string, MarketBid[]>; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; sentOffers: Record<string, SentOffer[]>; playerCatalog: Record<CompetitionName, CompetitionPlayer[]>; matchFixtures: MatchFixture[]; matchdays: NexoMatchdayState[]; simulationEnabled: boolean; catalogSyncEnabled: boolean; onCatalogSyncApplied: () => Promise<void>; onSavePlayer: (player: CompetitionPlayer) => Promise<void>; fantasyEvents: FantasyEvent[]; onCreateFantasyEvent: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshotFantasyEvent: (eventId: string) => Promise<void> | void; onOpenLeague: (leagueId: string) => void; onRenewMarket: (leagueId: string) => Promise<void> | void; notify: (v: string) => void }) {
   const [section, setSection] = useState<AdminSection>("overview");
   const [selectedUserId, setSelectedUserId] = useState(adminDemoUsers[0].id);
   const [selectedLeagueId, setSelectedLeagueId] = useState(leagues[0]?.id ?? "");
   const [playerCompetition, setPlayerCompetition] = useState<CompetitionName>("Primera");
   const [playerQuery, setPlayerQuery] = useState("");
   const [adminMatchday, setAdminMatchday] = useState(1);
+  const [backendPlayerPoints,setBackendPlayerPoints]=useState<Record<string,number>>({});
   const [editingPlayer, setEditingPlayer] = useState<CompetitionPlayer | null>(null);
   const [renewConfirmLeagueId, setRenewConfirmLeagueId] = useState<string | null>(null);
   const [renewingLeagueId, setRenewingLeagueId] = useState<string | null>(null);
@@ -11949,6 +12260,12 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, econo
   const selectedSentOffers = sentOffers[selectedLeague?.id ?? ""] ?? [];
   const selectedListedPlayers = selectedParticipationIds.flatMap((participationId) => (squads[participationId]?.players ?? []).filter((player) => playerContracts[`${participationId}:${player.id}`]?.listed));
   const visiblePlayers = playerCatalog[playerCompetition].filter((player) => `${player.name} ${player.club}`.toLocaleLowerCase("es").includes(playerQuery.toLocaleLowerCase("es")));
+  useEffect(()=>{
+    if(section!=="players"||!simulationEnabled)return;
+    let current=true;
+    loadNexoPlayerMatchdayPoints(playerCompetition,adminMatchday).then((points)=>{if(current)setBackendPlayerPoints(points)}).catch(()=>{if(current)setBackendPlayerPoints({})});
+    return()=>{current=false};
+  },[section,simulationEnabled,playerCompetition,adminMatchday]);
 
   async function savePlayer(nextPlayer: CompetitionPlayer) {
     try {
@@ -12052,6 +12369,8 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, econo
           <LegalVersionsAdminPanel config={legalConfig} onPublish={onPublishLegalVersion} />
           <section className="admin-grid">
             <ClubRulesAdminPanel rules={clubRules} onChange={setClubRules} notify={notify} />
+            <CareerRulesAdminPanel rules={careerRules} careers={careers} onChange={setCareerRules} onSave={onSaveCareerRules} notify={notify} />
+            <CareerContentAdminPanel notify={notify} />
             <AchievementEconomyAdminPanel rules={economyRules} onChange={setEconomyRules} notify={notify} />
             <MarketRulesAdminPanel rules={marketRules} onChange={setMarketRules} notify={notify} />
             <FantasyRulesAdminPanel rules={marketRules} onChange={setMarketRules} notify={notify} />
@@ -12339,7 +12658,7 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, econo
             </div>
             <div className="admin-player-list">
               {visiblePlayers.map((player) => {
-                const jornadaPoints = calculatePlayerPoints(demoPlayerMatchStats(`${player.id}_j${adminMatchday}`, player.position), player.position, scoringRules).total;
+                const jornadaPoints = simulationEnabled ? (backendPlayerPoints[player.id] ?? 0) : calculatePlayerPoints(demoPlayerMatchStats(`${player.id}_j${adminMatchday}`, player.position), player.position, scoringRules).total;
                 return (
                   <article key={player.id}>
                     <Avatar label={player.initials} />
@@ -12965,7 +13284,7 @@ function OnboardingAdminPanel({ config, onForce }: { config: OnboardingConfig; o
         <article>
           <small>VERSIÓN ACTUAL</small>
           <strong>v{config.version}</strong>
-          <span>5 pasos publicados</span>
+          <span>{onboardingSlides.length} pasos publicados</span>
         </article>
         <article>
           <small>COBERTURA</small>
@@ -13532,6 +13851,36 @@ function ClubRulesAdminPanel({ rules, onChange, notify }: { rules: ClubRules; on
       <button className="primary-button full" onClick={() => notify("Reglas de clubes y ranking guardadas")}>
         Guardar reglas de clubes
       </button>
+    </article>
+  );
+}
+
+function CareerRulesAdminPanel({ rules, careers, onChange, onSave, notify: showNotice }: { rules: CareerRules; careers: NexoCareer[]; onChange: (rules: CareerRules) => void; onSave: (rules: CareerRules) => Promise<void>; notify: (value: string) => void }) {
+  function update<K extends keyof CareerRules>(key: K, value: CareerRules[K]) { onChange({ ...rules, [key]: value }); }
+  function notify(value: string) { void onSave(rules).then(() => showNotice(value)).catch(() => showNotice("No se han podido guardar las reglas de Carrera")); }
+  return <article className="admin-panel career-rules-admin"><div className="section-title compact"><div><p className="eyebrow">MODO DIFERENCIAL</p><h2>Carrera de mánager</h2></div><span className="active-tag">{rules.enabled ? "ACTIVO" : "PAUSADO"}</span></div><p className="algorithm-description">Configura el contrato global. Los multiplicadores se fijan al crear cada contrato; las reglas de cierre y decisiones se aplican desde la siguiente jornada.</p><div className="career-admin-stats"><span><small>CARRERAS ACTIVAS</small><strong>{careers.filter((career) => career.status === "active").length}</strong></span><span><small>CLUBES REALES</small><strong>{new Set(careers.map((career) => career.sportsClubId)).size}</strong></span><span><small>REP. MEDIA</small><strong>{careers.length ? Math.round(careers.reduce((sum, career) => sum + career.reputation, 0) / careers.length) : 0}</strong></span></div><div className="market-rule-controls"><label><span>Presupuesto inicial</span><strong>{rules.initialBudget} M</strong><input type="range" min="0" max="100" step="5" value={rules.initialBudget} onChange={(event)=>update("initialBudget",Number(event.target.value))}/></label><label><span>Jugadores originales en plantilla</span><strong>Mínimo {rules.minimumOriginalSquad}</strong><input type="range" min="0" max="20" value={rules.minimumOriginalSquad} onChange={(event)=>update("minimumOriginalSquad",Number(event.target.value))}/></label><label><span>Originales en el once</span><strong>Mínimo {rules.minimumOriginalLineup}</strong><input type="range" min="0" max="11" value={rules.minimumOriginalLineup} onChange={(event)=>update("minimumOriginalLineup",Number(event.target.value))}/></label><label><span>Carreras gratis</span><strong>{rules.freeCareersPerCompetition} por competición</strong><input type="range" min="0" max="3" value={rules.freeCareersPerCompetition} onChange={(event)=>update("freeCareersPerCompetition",Number(event.target.value))}/></label><label><span>Coste de carrera adicional</span><strong>{rules.extraCareerCoinCost} monedas</strong><input type="range" min="0" max="2000" step="50" value={rules.extraCareerCoinCost} onChange={(event)=>update("extraCareerCoinCost",Number(event.target.value))}/></label><label><span>Coste de apostar por cantera</span><strong>{rules.academyDecisionCost.toFixed(2).replace(".",",")} M</strong><input type="range" min="0" max="3" step="0.25" value={rules.academyDecisionCost} onChange={(event)=>update("academyDecisionCost",Number(event.target.value))}/></label><label><span>Penalización por objetivo fallado</span><strong>-{rules.failureConfidencePenalty} confianza</strong><input type="range" min="1" max="25" value={rules.failureConfidencePenalty} onChange={(event)=>update("failureConfidencePenalty",Number(event.target.value))}/></label><label><span>Umbral de destitución</span><strong>{rules.dismissalConfidenceThreshold}/100</strong><input type="range" min="0" max="40" value={rules.dismissalConfidenceThreshold} onChange={(event)=>update("dismissalConfidenceThreshold",Number(event.target.value))}/></label><label><span>Objetivos · Cantera</span><strong>×{rules.relaxedTargetMultiplier.toFixed(2)}</strong><input type="range" min="0.6" max="1" step="0.05" value={rules.relaxedTargetMultiplier} onChange={(event)=>update("relaxedTargetMultiplier",Number(event.target.value))}/></label><label><span>Objetivos · Profesional</span><strong>×{rules.balancedTargetMultiplier.toFixed(2)}</strong><input type="range" min="0.8" max="1.2" step="0.05" value={rules.balancedTargetMultiplier} onChange={(event)=>update("balancedTargetMultiplier",Number(event.target.value))}/></label><label><span>Objetivos · Élite</span><strong>×{rules.eliteTargetMultiplier.toFixed(2)}</strong><input type="range" min="1" max="1.5" step="0.05" value={rules.eliteTargetMultiplier} onChange={(event)=>update("eliteTargetMultiplier",Number(event.target.value))}/></label></div><div className="fantasy-admin-option-list"><button className={rules.enabled?"active":""} onClick={()=>update("enabled",!rules.enabled)}><span>{rules.enabled?"✓":""}</span><p><strong>Permitir nuevas carreras</strong><small>Las existentes siguen accesibles aunque se pause.</small></p></button><button className={rules.weeklyDecisionEnabled?"active":""} onClick={()=>update("weeklyDecisionEnabled",!rules.weeklyDecisionEnabled)}><span>{rules.weeklyDecisionEnabled?"✓":""}</span><p><strong>Decisiones semanales</strong><small>Dilemas con consecuencias económicas y deportivas reales.</small></p></button><button className={rules.sameClubRankingEnabled?"active":""} onClick={()=>update("sameClubRankingEnabled",!rules.sameClubRankingEnabled)}><span>{rules.sameClubRankingEnabled?"✓":""}</span><p><strong>Ranking del mismo club</strong><small>Comparativa asíncrona sin compartir mercado.</small></p></button></div><button className="primary-button full" onClick={()=>notify("Reglas de Carrera guardadas para contratos y jornadas futuras")}>Guardar reglas de Carrera</button></article>;
+}
+
+function CareerContentAdminPanel({ notify }: { notify: (value: string) => void }) {
+  const [catalog,setCatalog]=useState<NexoCareerContentItem[]>([]);
+  const [view,setView]=useState<"event"|"mission">("event");
+  const [loading,setLoading]=useState(true);
+  const [saving,setSaving]=useState(false);
+  const [loadError,setLoadError]=useState(false);
+  useEffect(()=>{let active=true;void loadNexoCareerContentCatalog().then((items)=>{if(active)setCatalog(items)}).catch(()=>{if(active)setLoadError(true)}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[]);
+  function change(key:string,patch:Partial<NexoCareerContentItem>){setCatalog((current)=>current.map((item)=>item.key===key?{...item,...patch}:item))}
+  async function save(){setSaving(true);try{await Promise.all(catalog.map(saveNexoCareerContentItem));notify("Catálogo de Carrera actualizado")}catch{notify("No se ha podido guardar el catálogo de Carrera")}finally{setSaving(false)}}
+  const visible=catalog.filter((item)=>item.kind===view);
+  return (
+    <article className="admin-panel career-content-admin">
+      <div className="section-title compact"><div><p className="eyebrow">MOTOR NARRATIVO</p><h2>Misiones y eventos</h2><p>Controla qué puede aparecer y cuánto tarda en repetirse.</p></div><span className="active-tag">{loadError?"REQUIERE SESIÓN ADMIN":`${catalog.filter((item)=>item.active).length}/${catalog.length} ACTIVOS`}</span></div>
+      <nav><button className={view==="event"?"active":""} onClick={()=>setView("event")}>Eventos ({catalog.filter((item)=>item.kind==="event").length})</button><button className={view==="mission"?"active":""} onClick={()=>setView("mission")}>Misiones ({catalog.filter((item)=>item.kind==="mission").length})</button></nav>
+      {loading?<p className="algorithm-description">Cargando catálogo…</p>:loadError?<p className="algorithm-description">El catálogo está activo en Supabase. Inicia sesión con tu cuenta administradora para editar sus 18 eventos y 10 misiones.</p>:<div className="career-content-list">{visible.map((item)=><section className={item.active?"active":""} key={item.key}>
+        <button onClick={()=>change(item.key,{active:!item.active})}><span>{item.active?"✓":""}</span><p><strong>{item.title}</strong><small>{item.kind==="event"?`${item.category}${item.storyKey?` · cadena ${item.storyKey} ${item.storyStep}`:""}`:`${item.metricKey} · objetivo ${item.target}`}</small></p></button>
+        <label><span>Sin repetir</span><input type="number" min="0" max="38" value={item.cooldown} onChange={(event)=>change(item.key,{cooldown:Number(event.target.value)})}/><small>jornadas</small></label>
+        {item.kind==="mission"&&<><label><span>Objetivo</span><input type="number" min="0" value={item.target??0} onChange={(event)=>change(item.key,{target:Number(event.target.value)})}/></label><label><span>Premio REP</span><input type="number" min="0" value={item.reward??0} onChange={(event)=>change(item.key,{reward:Number(event.target.value)})}/></label><label><span>Penalización CONF</span><input type="number" min="0" value={item.penalty??0} onChange={(event)=>change(item.key,{penalty:Number(event.target.value)})}/></label></>}
+      </section>)}</div>}
+      <button className="primary-button full" disabled={loading||saving||loadError} onClick={save}>{saving?"Guardando…":"Guardar catálogo narrativo"}</button>
     </article>
   );
 }
