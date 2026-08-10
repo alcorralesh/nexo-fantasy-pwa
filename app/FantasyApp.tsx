@@ -7231,24 +7231,9 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
 
   async function toggleListing() {
     if (backendEnabled) {
-      if (!backendListing) {
-        setListingPrice(player.value.toFixed(1));
-        setMarketError("");
-        setPanel("list");
-        return;
-      }
-      setMarketBusy(true);
-      try {
-        await withdrawNexoUserListing(backendListing.listingId);
-        onChangeContract({ ...contract, listed: false, offers: 0 });
-        await onRefreshBackendMarket();
-        window.dispatchEvent(new CustomEvent("nexo-user-market-updated"));
-        notify(`${player.name} retirado del mercado · sus ofertas han sido canceladas`);
-      } catch (error) {
-        notify(error instanceof Error ? error.message : "No se pudo retirar el jugador");
-      } finally {
-        setMarketBusy(false);
-      }
+      setListingPrice((backendListing?.askingPrice ?? player.value).toFixed(1));
+      setMarketError("");
+      setPanel("list");
       return;
     }
     const listed = !contract.listed;
@@ -7259,6 +7244,24 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
     });
     if (listed) onCreateRivalOffer();
     notify(listed ? `${player.name} ya aparece en el mercado de la liga` : `${player.name} retirado del mercado`);
+  }
+
+  async function withdrawListing() {
+    if (!backendListing) return;
+    setMarketBusy(true);
+    setMarketError("");
+    try {
+      await withdrawNexoUserListing(backendListing.listingId);
+      onChangeContract({ ...contract, listed: false, offers: 0 });
+      await onRefreshBackendMarket();
+      window.dispatchEvent(new CustomEvent("nexo-user-market-updated"));
+      setPanel("overview");
+      notify(`${player.name} retirado del mercado · sus ofertas han sido canceladas`);
+    } catch (error) {
+      setMarketError(error instanceof Error ? error.message : "No se pudo retirar el jugador");
+    } finally {
+      setMarketBusy(false);
+    }
   }
 
   async function confirmListing(event: FormEvent) {
@@ -7276,7 +7279,7 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
       await onRefreshBackendMarket();
       window.dispatchEvent(new CustomEvent("nexo-user-market-updated"));
       setPanel("overview");
-      notify(`${player.name} ya está visible para todos los usuarios de la liga`);
+      notify(backendListing ? `Precio de ${player.name} actualizado` : `${player.name} ya está visible para todos los usuarios de la liga`);
     } catch (error) {
       setMarketError(error instanceof Error ? error.message : "No se pudo publicar el jugador");
     } finally {
@@ -7389,8 +7392,8 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
                 <button className={isListed ? "active" : ""} onClick={toggleListing} disabled={marketBusy}>
                   <span>↗</span>
                   <div>
-                    <strong>{isListed ? "Retirar del mercado" : "Poner en el mercado"}</strong>
-                    <small>{isListed ? "Cancela todas las ofertas recibidas" : "Elige un precio desde su valor actual"}</small>
+                    <strong>{isListed ? "Gestionar anuncio" : "Poner en el mercado"}</strong>
+                    <small>{isListed ? "Modifica el precio o retíralo" : "Elige un precio desde su valor actual"}</small>
                   </div>
                 </button>
                 <button className={blindActive ? "active" : ""} onClick={toggleBlind}>
@@ -7435,9 +7438,9 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
         {panel === "list" && (
           <section className="management-panel">
             <button className="management-back" onClick={() => setPanel("overview")}>‹ Volver</button>
-            <p className="eyebrow">PUBLICAR EN EL MERCADO</p>
-            <h3>Elige el precio de venta</h3>
-            <p>Todos los participantes de esta liga podrán ver el anuncio y enviarte ofertas privadas.</p>
+            <p className="eyebrow">{backendListing ? "GESTIONAR ANUNCIO" : "PUBLICAR EN EL MERCADO"}</p>
+            <h3>{backendListing ? "Modifica el precio de venta" : "Elige el precio de venta"}</h3>
+            <p>{backendListing ? "El nuevo importe se mostrará inmediatamente a todos los participantes de la liga." : "Todos los participantes de esta liga podrán ver el anuncio y enviarte ofertas privadas."}</p>
             <form onSubmit={confirmListing}>
               <label className="bid-amount-field">
                 <span>Precio solicitado</span>
@@ -7447,12 +7450,13 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
                 </div>
                 <small>Mínimo: {player.value.toFixed(1).replace(".", ",")} M · valor de mercado actual</small>
               </label>
-              <p className="bid-privacy-note">El anuncio no desaparece en las renovaciones normales del mercado. Permanecerá hasta que vendas al jugador o lo retires.</p>
+              <p className="bid-privacy-note">{backendListing ? "El nuevo mínimo se aplicará a las ofertas futuras. Las ofertas válidas que ya recibiste conservarán su importe y vigencia." : "El anuncio no desaparece en las renovaciones normales del mercado. Permanecerá hasta que vendas al jugador o lo retires."}</p>
               {marketError && <p className="form-error" role="alert">{marketError}</p>}
               <div className="dialog-actions">
                 <button type="button" className="secondary-button" onClick={() => setPanel("overview")}>Cancelar</button>
-                <button type="submit" className="primary-button" disabled={marketBusy}>{marketBusy ? "Publicando…" : "Publicar jugador"}</button>
+                <button type="submit" className="primary-button" disabled={marketBusy}>{marketBusy ? "Guardando…" : backendListing ? "Guardar nuevo precio" : "Publicar jugador"}</button>
               </div>
+              {backendListing && <button type="button" className="listing-withdraw-button" disabled={marketBusy} onClick={() => void withdrawListing()}>Retirar del mercado y cancelar ofertas</button>}
             </form>
           </section>
         )}

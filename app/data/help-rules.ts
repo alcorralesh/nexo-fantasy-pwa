@@ -399,6 +399,8 @@ export const helpRules: HelpRule[] = [
       "Solo puedes poner en el mercado a un jugador de tu banquillo y debes fijar un precio solicitado igual o superior a su valor de mercado vigente.",
       "El anuncio es propio de esa liga y resulta visible para todos sus demás participantes, que pueden enviarte ofertas privadas desde el mercado compartido.",
       "Los anuncios de los usuarios son persistentes: una renovación del mercado del juego no los elimina, sustituye ni cambia su precio. Permanecen hasta que el propietario acepta una oferta o los retira.",
+      "Mientras el anuncio esté activo, su propietario puede modificar el precio solicitado tantas veces como necesite, respetando siempre el valor de mercado vigente como mínimo.",
+      "El nuevo precio se aplica inmediatamente a las ofertas futuras; las ofertas válidas recibidas antes del cambio conservan su importe y su plazo original.",
       "Retirar un jugador del mercado cancela automáticamente todas las ofertas activas recibidas por él y libera el saldo que cada rival tuviera retenido; no revierte operaciones ya confirmadas.",
       "Un jugador puesto en venta aparece identificado en el listado del banquillo y también en el mercado compartido de esa liga.",
       "El propietario puede ver su anuncio, pero no pujar por su propio jugador; los demás participantes sí pueden presentar pujas según sus límites.",
