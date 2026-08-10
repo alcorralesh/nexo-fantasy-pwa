@@ -13360,7 +13360,13 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
     setSimulationLoading(true);
     setSimulationError("");
     try {
-      const result = await simulateNexoMatchdayClose({ competitionId: simulationCompetition, matchday: simulationMatchday, scenario: simulationScenario });
+      const selectedMatchday = availableMatchdays.find((item) => item.matchday === simulationMatchday);
+      const result = await simulateNexoMatchdayClose({
+        competitionId: simulationCompetition,
+        season: selectedMatchday?.season,
+        matchday: simulationMatchday,
+        scenario: simulationScenario,
+      });
       setSimulation(result);
       notify(`Simulación J${simulationMatchday} completada sin modificar la temporada`);
     } catch (failure) {
@@ -13596,7 +13602,7 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
           <div>
             <p className="eyebrow">ENTORNO SEGURO DE PRUEBAS</p>
             <h2>Simular un cierre completo</h2>
-            <p>Calcula fotografías, puntos, pagos, ranking y retos sin escribir nada en la temporada oficial.</p>
+            <p>Previsualiza el mismo motor del cierre oficial con las estadísticas disponibles, sin escribir resultados ni tocar saldos.</p>
           </div>
           <span className="active-tag">PRODUCCIÓN INTACTA</span>
         </div>
@@ -13616,9 +13622,9 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
           <label>
             <span>Escenario</span>
             <select value={simulationScenario} onChange={(event) => { setSimulationScenario(event.target.value as NexoSimulationScenario); setSimulation(null); }}>
-              <option value="normal">Todos los partidos finalizados</option>
-              <option value="postponed">Un partido aplazado</option>
-              <option value="advanced">Jornada adelantada</option>
+              <option value="normal">Cierre con los datos disponibles</option>
+              <option value="postponed">Comprobar bloqueo por aplazado</option>
+              <option value="advanced">Comprobar jornada adelantada</option>
             </select>
           </label>
           <button className="primary-button" onClick={runSimulation} disabled={simulationLoading || !enabled || !availableMatchdays.length}>
@@ -13638,11 +13644,22 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
               </div>
               <button className="secondary-button" onClick={discardSimulation}>Eliminar informe</button>
             </header>
+            <div className={`simulation-engine-status ${simulation.settlementReady ? "ready" : "blocked"}`}>
+              <span>{simulation.settlementReady ? "✓" : "!"}</span>
+              <p>
+                <strong>{simulation.settlementReady ? "El cierre podría consolidarse" : "El cierre oficial no consolidaría todavía"}</strong>
+                <small>
+                  {simulation.settlementReady
+                    ? `Motor oficial · ${simulation.statsReadyCount}/${simulation.fixtureCount} partidos con estadísticas finales.`
+                    : simulation.blockedReason}
+                </small>
+              </p>
+            </div>
             <section className="simulation-result-kpis">
               <article><small>Participaciones</small><strong>{simulation.memberships}</strong></article>
               <article><small>Alineaciones válidas</small><strong>{simulation.validLineups}</strong></article>
               <article><small>Sin once válido</small><strong>{simulation.zeroLineups}</strong></article>
-              <article><small>Saldo simulado</small><strong>+{simulation.totalPayout.toFixed(1).replace(".", ",")} M</strong></article>
+              <article><small>{simulation.settlementReady ? "Saldo · solo mercado" : "Pago de mercado bloqueado"}</small><strong>+{simulation.totalPayout.toFixed(1).replace(".", ",")} M</strong></article>
               <article><small>Retos que se activarían</small><strong>{simulation.challengesToActivate}</strong></article>
             </section>
             <div className="simulation-result-table">
@@ -13651,12 +13668,86 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
                 <div className="simulation-result-row" key={row.membershipId}>
                   <strong>{row.rank}</strong>
                   <span><b>{row.teamName}</b><small>{row.leagueName} · {row.mode === "market" ? "Mercado" : "Fantástica"}</small></span>
-                  <em>{row.source === "saved_draft" ? "Borrador" : row.source === "roster_fallback" ? "Plantilla" : "Sin once"}</em>
+                  <em>{row.source === "saved_draft" ? `Borrador · ${row.formation}` : row.source === "roster_fallback" ? `Plantilla · ${row.formation}` : "Sin once"}</em>
                   <b>{row.points} pts</b>
-                  <b>+{row.payout.toFixed(1).replace(".", ",")} M</b>
+                  <b>{row.economicEligible ? `+${(simulation.settlementReady ? row.payout : row.calculatedPayout).toFixed(1).replace(".", ",")} M${simulation.settlementReady ? "" : "*"}` : "No aplica"}</b>
                 </div>
               ))}
             </div>
+            {!simulation.settlementReady && <p className="simulation-note">* Cálculo informativo exclusivo para ligas de mercado; no se aplicaría hasta que la jornada cumpla las condiciones reales de cierre. Las ligas fantásticas nunca reciben dinero por puntos.</p>}
+            <section className="challenge-simulation-report">
+              <header>
+                <div><p className="eyebrow">RETOS · ACTIVACIÓN REAL</p><h3>Precios y presupuesto que se publicarían</h3><small>Se ejecuta la congelación oficial y después se revierte, sin crear ningún snapshot definitivo.</small></div>
+                <span><b>{simulation.challengeSimulation.challengeCount}</b> retos · {simulation.challengeSimulation.totalPlayers} precios</span>
+              </header>
+              {!simulation.challengeSimulation.challenges.length ? <div className="challenge-simulation-empty"><span>★</span><p><strong>Sin retos dependientes de esta jornada</strong><small>Ningún evento de esta competición y temporada espera este cierre.</small></p></div> : <div className="challenge-simulation-list">
+                {simulation.challengeSimulation.challenges.map((challenge) => <article key={challenge.leagueId}>
+                  <header><span>{challenge.format === "partidazo" ? "★" : "◆"}</span><p><small>{challenge.format === "partidazo" ? "EL PARTIDAZO" : `${challenge.fixtures.length} PARTIDOS`} · P{challenge.budgetPercentile}</small><strong>{challenge.name}</strong></p><b>{challenge.alreadyPublished ? "YA PUBLICADO" : "SE ACTIVARÍA"}</b></header>
+                  <div className="challenge-simulation-budget"><p><small>PRESUPUESTO CALCULADO</small><strong>{challenge.budget.toFixed(1).replace(".", ",")} M</strong></p><span>{challenge.playerCount} jugadores disponibles</span></div>
+                  <div className="challenge-simulation-fixtures">{challenge.fixtures.map((fixture) => <span key={fixture.id}><small>J{fixture.matchday}</small><b>{fixture.homeClub}</b><em>vs</em><b>{fixture.awayClub}</b></span>)}</div>
+                  <div className="challenge-simulation-kpis"><span><small>PRECIO MÍNIMO</small><b>{challenge.minimumPrice.toFixed(1).replace(".", ",")} M</b></span><span><small>PRECIO MEDIO</small><b>{challenge.averagePrice.toFixed(1).replace(".", ",")} M</b></span><span><small>PRECIO MÁXIMO</small><b>{challenge.maximumPrice.toFixed(1).replace(".", ",")} M</b></span><span><small>MÁX. POR CLUB</small><b>{challenge.maxPlayersPerClub}</b></span></div>
+                  <div className="challenge-simulation-positions">{(["POR","DEF","MED","DEL"] as const).map((position) => <span key={position}><b>{position}</b>{challenge.positionCounts[position] ?? 0}</span>)}<em>{challenge.clubs.join(" · ")}</em></div>
+                  <details><summary>Ver los {challenge.playerCount} jugadores y precios congelados</summary><div className="challenge-player-price-list">{challenge.players.map((player) => <div key={player.id}><span>{player.initials}</span><p><b>{player.name}</b><small>{player.position} · {player.club}</small></p><strong>{player.price.toFixed(1).replace(".", ",")} M</strong></div>)}</div></details>
+                </article>)}
+              </div>}
+            </section>
+            <section className="career-simulation-report">
+              <header>
+                <div>
+                  <p className="eyebrow">CARRERA · CIERRE COMPLETO</p>
+                  <h3>Consecuencias para los mánagers</h3>
+                  <small>El motor real se ejecuta y se revierte: ninguna confianza, decisión, objetivo o destitución queda guardada.</small>
+                </div>
+                <div>
+                  <span><b>{simulation.careerSimulation.careerCount}</b> carreras</span>
+                  <span><b>{simulation.careerSimulation.atRisk}</b> en riesgo</span>
+                  <span className={simulation.careerSimulation.dismissals ? "danger" : ""}><b>{simulation.careerSimulation.dismissals}</b> destituciones</span>
+                </div>
+              </header>
+              {!simulation.careerSimulation.careers.length ? (
+                <div className="career-simulation-empty"><span>M</span><p><strong>Sin Carreras afectadas</strong><small>No hay mánagers activos o actas de Carrera para esta competición y jornada.</small></p></div>
+              ) : (
+                <div className="career-simulation-list">
+                  {simulation.careerSimulation.careers.map((career) => {
+                    const missionStatus = String(career.mission?.status ?? "active");
+                    const decisionConditionMet = career.decision?.conditionMet !== false;
+                    const visibleObjectives = career.objectives.filter((objective) => objective.changed || objective.id === String(career.mission?.id ?? ""));
+                    return <article className={career.wouldBeDismissed ? "dismissed" : career.consecutiveFailuresAfter >= 2 ? "at-risk" : ""} key={career.careerId}>
+                      <header>
+                        <span>{career.sportsClubName.split(/\s+/).map((word) => word[0]).slice(0,2).join("")}</span>
+                        <p><small>{career.managerName} · {career.difficulty === "elite" ? "Élite" : career.difficulty === "relaxed" ? "Cantera" : "Profesional"}</small><strong>{career.sportsClubName}</strong></p>
+                        <b>{career.wouldBeDismissed ? "DESTITUCIÓN" : career.consecutiveFailuresAfter >= 2 ? "EN RIESGO" : "CONTINÚA"}</b>
+                      </header>
+                      <div className="career-simulation-score">
+                        <strong>{career.totalPoints}<small> pts</small></strong>
+                        <span>Once {career.lineupPoints} · decisión {career.decisionPoints >= 0 ? "+" : ""}{career.decisionPoints}</span>
+                        {career.rankingPosition && <em>#{career.rankingPosition} comparable</em>}
+                      </div>
+                      <div className="career-simulation-deltas">
+                        <span><small>CONFIANZA</small><b>{career.confidenceBefore} → {career.confidenceAfter}</b><em className={career.confidenceChange < 0 ? "negative" : ""}>{career.confidenceChange >= 0 ? "+" : ""}{career.confidenceChange}</em></span>
+                        <span><small>REPUTACIÓN</small><b>{career.reputationBefore} → {career.reputationAfter}</b><em className={career.reputationChange < 0 ? "negative" : ""}>{career.reputationChange >= 0 ? "+" : ""}{career.reputationChange}</em></span>
+                        <span><small>FALLOS SEGUIDOS</small><b>{career.consecutiveFailuresBefore} → {career.consecutiveFailuresAfter}</b></span>
+                        <span><small>PRESUPUESTO</small><b>{career.budgetBefore.toFixed(1).replace(".", ",")} → {career.budgetAfter.toFixed(1).replace(".", ",")} M</b></span>
+                      </div>
+                      <div className="career-simulation-consequences">
+                        <section className={missionStatus === "failed" ? "failed" : missionStatus === "completed" ? "completed" : ""}>
+                          <small>MISIÓN DE JORNADA</small>
+                          <strong>{String(career.mission?.title ?? "Sin misión asignada")}</strong>
+                          {career.mission && <span>{Number(career.mission.currentValue ?? 0)} / {Number(career.mission.targetValue ?? 0)} · {missionStatus === "failed" ? `Fallida · -${Number(career.mission.penalty ?? 0)} confianza` : missionStatus === "completed" ? `Cumplida · +${Number(career.mission.reward ?? 0)} reputación` : "Pendiente"}</span>}
+                        </section>
+                        <section className={career.decision && !decisionConditionMet ? "failed" : ""}>
+                          <small>DECISIÓN TOMADA</small>
+                          <strong>{String(career.decision?.choiceTitle ?? "Sin decisión esta jornada")}</strong>
+                          <span>{career.decision ? `${String(career.decision.consequence ?? "")} ${career.decision.conditionalOriginalTarget ? `· condición ${decisionConditionMet ? "cumplida" : "incumplida"}` : ""}` : "No añade consecuencias al cierre."}</span>
+                        </section>
+                      </div>
+                      {!!visibleObjectives.length && <div className="career-simulation-objectives">{visibleObjectives.map((objective) => <span className={objective.status} key={objective.id}><b>{objective.status === "completed" ? "✓" : objective.status === "failed" ? "×" : "·"}</b>{objective.title}<small>{objective.currentValue}/{objective.targetValue}</small></span>)}</div>}
+                      {career.wouldBeDismissed && <div className="career-dismissal-warning"><b>La directiva lo destituiría</b><span>Acumula {career.consecutiveFailuresAfter} fallos y termina con {career.confidenceAfter}/100 de confianza.</span></div>}
+                    </article>;
+                  })}
+                </div>
+              )}
+            </section>
           </div>
         )}
       </section>
