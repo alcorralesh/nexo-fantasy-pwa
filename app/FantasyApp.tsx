@@ -13344,6 +13344,7 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
   const availableMatchdays = matchdays.filter((item) => item.competitionId === simulationCompetition);
   const [simulationMatchday, setSimulationMatchday] = useState(availableMatchdays[0]?.matchday ?? 1);
   const [simulationScenario, setSimulationScenario] = useState<NexoSimulationScenario>("normal");
+  const [simulationUseSamplePoints, setSimulationUseSamplePoints] = useState(false);
   const [simulation, setSimulation] = useState<NexoMatchdaySimulation | null>(null);
   const [simulationLoading, setSimulationLoading] = useState(false);
   const [simulationError, setSimulationError] = useState("");
@@ -13366,6 +13367,7 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
         season: selectedMatchday?.season,
         matchday: simulationMatchday,
         scenario: simulationScenario,
+        useSamplePoints: simulationUseSamplePoints,
       });
       setSimulation(result);
       notify(`Simulación J${simulationMatchday} completada sin modificar la temporada`);
@@ -13631,6 +13633,12 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
             {simulationLoading ? "Calculando…" : "Simular cierre"}
           </button>
         </div>
+        <label className={`simulation-points-check ${simulationUseSamplePoints ? "active" : ""}`}>
+          <input type="checkbox" checked={simulationUseSamplePoints} onChange={(event) => { setSimulationUseSamplePoints(event.target.checked); setSimulation(null); }} />
+          <span>{simulationUseSamplePoints ? "✓" : ""}</span>
+          <p><strong>Generar puntos de prueba</strong><small>Asigna entre 2 y 10 puntos deterministas a los jugadores sin estadísticas y permite previsualizar posiciones, premios y movimientos. Se revierte al terminar.</small></p>
+          <b>NO SE GUARDA</b>
+        </label>
         {!enabled && <p className="simulation-note">Inicia sesión con el administrador real para ejecutar la simulación contra Supabase.</p>}
         {enabled && !availableMatchdays.length && <p className="simulation-note">No hay jornadas sincronizadas para esta competición.</p>}
         {simulationError && <p className="form-error">{simulationError}</p>}
@@ -13640,7 +13648,7 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
               <div>
                 <p className="eyebrow">INFORME · JORNADA {simulation.matchday}</p>
                 <h3>La temporada oficial no ha cambiado</h3>
-                <small>Informe {simulation.runId.slice(0, 8)} · estado real: {simulationStateLabel(simulation.officialState)}</small>
+                <small>Informe {simulation.runId.slice(0, 8)} · estado real: {simulationStateLabel(simulation.officialState)}{simulation.usesSamplePoints ? " · puntos de prueba" : ""}</small>
               </div>
               <button className="secondary-button" onClick={discardSimulation}>Eliminar informe</button>
             </header>
@@ -13650,7 +13658,9 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
                 <strong>{simulation.settlementReady ? "El cierre podría consolidarse" : "El cierre oficial no consolidaría todavía"}</strong>
                 <small>
                   {simulation.settlementReady
-                    ? `Motor oficial · ${simulation.statsReadyCount}/${simulation.fixtureCount} partidos con estadísticas finales.`
+                    ? simulation.usesSamplePoints
+                      ? "Motor oficial ejecutado con puntos temporales y reversibles. La jornada real sigue intacta."
+                      : `Motor oficial · ${simulation.statsReadyCount}/${simulation.fixtureCount} partidos con estadísticas finales.`
                     : simulation.blockedReason}
                 </small>
               </p>
@@ -13662,18 +13672,50 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
               <article><small>{simulation.settlementReady ? "Saldo · solo mercado" : "Pago de mercado bloqueado"}</small><strong>+{simulation.totalPayout.toFixed(1).replace(".", ",")} M</strong></article>
               <article><small>Retos que se activarían</small><strong>{simulation.challengesToActivate}</strong></article>
             </section>
-            <div className="simulation-result-table">
-              <div className="simulation-result-row head"><span>#</span><span>Equipo y liga</span><span>Origen</span><span>Puntos</span><span>Pago</span></div>
-              {simulation.results.map((row) => (
-                <div className="simulation-result-row" key={row.membershipId}>
-                  <strong>{row.rank}</strong>
-                  <span><b>{row.teamName}</b><small>{row.leagueName} · {row.mode === "market" ? "Mercado" : "Fantástica"}</small></span>
-                  <em>{row.source === "saved_draft" ? `Borrador · ${row.formation}` : row.source === "roster_fallback" ? `Plantilla · ${row.formation}` : "Sin once"}</em>
-                  <b>{row.points} pts</b>
-                  <b>{row.economicEligible ? `+${(simulation.settlementReady ? row.payout : row.calculatedPayout).toFixed(1).replace(".", ",")} M${simulation.settlementReady ? "" : "*"}` : "No aplica"}</b>
-                </div>
-              ))}
-            </div>
+            <section className="simulation-member-report">
+              <header>
+                <div><p className="eyebrow">INFORME ANTES / DESPUÉS</p><h3>Detalle completo por usuario</h3><small>Abre una participación para revisar su once, puntuación y todos los efectos que generaría el cierre.</small></div>
+                <span>{simulation.results.length} usuarios</span>
+              </header>
+              <div className="simulation-member-list">
+                {simulation.results.map((row) => {
+                  const captain = row.playerBreakdown.find((player) => player.isCaptain);
+                  return <details className="simulation-member-card" key={row.membershipId}>
+                    <summary>
+                      <b>#{row.rank}</b>
+                      <span><strong>{row.managerName}</strong><small>{row.teamName} · {row.leagueName}</small></span>
+                      <em>{row.valid ? `${row.formation} · ${row.starterCount}/11` : "Sin once válido"}</em>
+                      <span><strong>{row.points} pts</strong><small>{row.mode === "market" ? "Liga de mercado" : "Liga fantástica"}</small></span>
+                      <i>+</i>
+                    </summary>
+                    <div className="simulation-member-body">
+                      <section className="simulation-lineup-detail">
+                        <header><div><small>ONCE UTILIZADO</small><strong>{row.formation}</strong></div><span>{captain ? <><b>C</b>{captain.name}</> : "Sin capitán"}</span></header>
+                        {!row.playerBreakdown.length ? <div className="simulation-lineup-empty"><span>XI</span><p><strong>No hay un once válido</strong><small>Este usuario puntuaría cero y no se inventarían jugadores.</small></p></div> : <div className="simulation-player-grid">
+                          {row.playerBreakdown.map((player) => <article className={player.isCaptain ? "captain" : ""} key={player.playerId}>
+                            <span>{player.photoUrl ? <img src={player.photoUrl} alt="" /> : player.initials}{player.isCaptain && <b>C</b>}</span>
+                            <p><strong>{player.name}</strong><small>{player.position} · {player.club}</small></p>
+                            <em>{player.rawPoints.toFixed(0)}{player.multiplier > 1 ? ` × ${player.multiplier}` : ""}</em>
+                            <b>{player.points.toFixed(0)} pts</b>
+                          </article>)}
+                        </div>}
+                      </section>
+                      <section className="simulation-before-after">
+                        <article><small>SALDO ANTERIOR</small><strong>{row.currentBudget.toFixed(1).replace(".", ",")} M</strong><span>Antes del cierre</span></article>
+                        <i>→</i>
+                        <article className={row.simulatedBudget > row.currentBudget ? "positive" : ""}><small>SALDO POSTERIOR</small><strong>{row.simulatedBudget.toFixed(1).replace(".", ",")} M</strong><span>{row.economicEligible ? `${row.simulatedBudget > row.currentBudget ? "+" : ""}${(row.simulatedBudget-row.currentBudget).toFixed(1).replace(".", ",")} M` : "Sin premio económico"}</span></article>
+                        <article><small>POSICIÓN</small><strong>#{row.rank}</strong><span>En {row.leagueName}</span></article>
+                        <article><small>CAPITÁN</small><strong>{captain?.points.toFixed(0) ?? "—"} pts</strong><span>{captain?.name ?? "No definido"}</span></article>
+                      </section>
+                      <section className="simulation-generated-effects">
+                        <div><header><span>N</span><p><small>NOTIFICACIONES</small><strong>{row.notifications.length} generadas</strong></p></header>{row.notifications.length ? row.notifications.map((notice, index) => <article key={`${notice.title}-${index}`}><b>{notice.title}</b><span>{notice.body}</span><small>Destino: {notice.targetSection}</small></article>) : <p className="empty-effect">No se generarían avisos mientras el cierre siga bloqueado.</p>}</div>
+                        <div><header><span>↗</span><p><small>MOVIMIENTOS</small><strong>{row.movements.length} generados</strong></p></header>{row.movements.length ? row.movements.map((movement, index) => <article key={`${movement.type}-${index}`}><b>{movement.title}</b><span>{movement.detail}</span><small>{movement.type === "matchday_payout" ? `+${movement.amount.toFixed(1).replace(".", ",")} M` : "Sin movimiento de saldo"}</small></article>) : <p className="empty-effect">No se crearían resultados ni asientos económicos todavía.</p>}</div>
+                      </section>
+                    </div>
+                  </details>;
+                })}
+              </div>
+            </section>
             {!simulation.settlementReady && <p className="simulation-note">* Cálculo informativo exclusivo para ligas de mercado; no se aplicaría hasta que la jornada cumpla las condiciones reales de cierre. Las ligas fantásticas nunca reciben dinero por puntos.</p>}
             <section className="challenge-simulation-report">
               <header>

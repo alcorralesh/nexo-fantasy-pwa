@@ -84,6 +84,37 @@ export type NexoSimulationResultRow = {
   currentBudget: number;
   simulatedBudget: number;
   rank: number;
+  playerBreakdown: NexoSimulationPlayerRow[];
+  notifications: NexoSimulationNotification[];
+  movements: NexoSimulationMovement[];
+};
+
+export type NexoSimulationPlayerRow = {
+  playerId: string;
+  name: string;
+  initials: string;
+  position: "POR" | "DEF" | "MED" | "DEL";
+  club: string;
+  photoUrl?: string;
+  slotOrder: number;
+  rawPoints: number;
+  multiplier: number;
+  points: number;
+  isCaptain: boolean;
+};
+
+export type NexoSimulationNotification = {
+  type: "matchday" | "market" | "achievement" | "system";
+  title: string;
+  body: string;
+  targetSection: string;
+};
+
+export type NexoSimulationMovement = {
+  type: "matchday_result" | "matchday_payout";
+  title: string;
+  detail: string;
+  amount: number;
 };
 
 export type NexoCareerSimulationObjective = {
@@ -183,7 +214,8 @@ export type NexoMatchdaySimulation = {
   officialState: NexoMatchdayState["state"];
   productionUntouched: boolean;
   usesOfficialEngine: boolean;
-  pointsSource: "player_matchday_points";
+  pointsSource: "player_matchday_points" | "sample_sandbox";
+  usesSamplePoints: boolean;
   settlementReady: boolean;
   blockedReason?: string;
   fixtureCount: number;
@@ -301,9 +333,9 @@ export async function loadNexoMatchdayHistory(): Promise<NexoMatchdayHistory[]> 
   }));
 }
 
-export async function simulateNexoMatchdayClose(input: { competitionId: string; season?: string; matchday: number; scenario: NexoSimulationScenario }): Promise<NexoMatchdaySimulation> {
+export async function simulateNexoMatchdayClose(input: { competitionId: string; season?: string; matchday: number; scenario: NexoSimulationScenario; useSamplePoints?: boolean }): Promise<NexoMatchdaySimulation> {
   const client = requireClient();
-  const { data, error } = await client.rpc("admin_simulate_matchday_close", {
+  const { data, error } = await client.rpc(input.useSamplePoints ? "admin_simulate_matchday_close_with_points" : "admin_simulate_matchday_close", {
     target_competition_id: input.competitionId,
     target_season: input.season ?? "2026",
     target_matchday: input.matchday,
@@ -321,7 +353,8 @@ export async function simulateNexoMatchdayClose(input: { competitionId: string; 
     officialState: result.officialState as NexoMatchdayState["state"],
     productionUntouched: Boolean(result.productionUntouched),
     usesOfficialEngine: Boolean(result.usesOfficialEngine),
-    pointsSource: "player_matchday_points",
+    pointsSource: result.pointsSource === "sample_sandbox" ? "sample_sandbox" : "player_matchday_points",
+    usesSamplePoints: Boolean(result.usesSamplePoints),
     settlementReady: Boolean(result.settlementReady),
     blockedReason: result.blockedReason ? String(result.blockedReason) : undefined,
     fixtureCount: Number(result.fixtureCount),
@@ -357,6 +390,31 @@ export async function simulateNexoMatchdayClose(input: { competitionId: string; 
       currentBudget: Number(row.currentBudget),
       simulatedBudget: row.mode === "market" ? Number(row.simulatedBudget) : Number(row.currentBudget),
       rank: Number(row.rank),
+      playerBreakdown: ((row.playerBreakdown ?? []) as Record<string, unknown>[]).map((player) => ({
+        playerId: String(player.playerId),
+        name: String(player.name ?? "Jugador"),
+        initials: String(player.initials ?? ""),
+        position: player.position as NexoSimulationPlayerRow["position"],
+        club: String(player.club ?? ""),
+        photoUrl: player.photoUrl ? String(player.photoUrl) : undefined,
+        slotOrder: Number(player.slotOrder ?? 0),
+        rawPoints: Number(player.rawPoints),
+        multiplier: Number(player.multiplier),
+        points: Number(player.points),
+        isCaptain: Boolean(player.isCaptain),
+      })),
+      notifications: ((row.notifications ?? []) as Record<string, unknown>[]).map((notice) => ({
+        type: notice.type as NexoSimulationNotification["type"],
+        title: String(notice.title),
+        body: String(notice.body),
+        targetSection: String(notice.targetSection),
+      })),
+      movements: ((row.movements ?? []) as Record<string, unknown>[]).map((movement) => ({
+        type: movement.type as NexoSimulationMovement["type"],
+        title: String(movement.title),
+        detail: String(movement.detail),
+        amount: Number(movement.amount ?? 0),
+      })),
     })),
   };
 }
