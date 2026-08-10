@@ -16,6 +16,9 @@ import { loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, runNexoPlayerC
 import { loadNexoCalendarSyncHistory, loadNexoMatchCalendar, runNexoCalendarSync, type CalendarSyncJob, type CalendarSyncResult, type MatchFixture } from "./services/nexo-calendar";
 import { deleteNexoMatchdaySimulation, loadNexoMatchdayLineups, loadNexoMatchdayStates, saveNexoMatchdayLineup, simulateNexoMatchdayClose, type NexoMatchdaySimulation, type NexoMatchdayState, type NexoSimulationScenario } from "./services/nexo-matchdays";
 import { createNexoChallenge, loadNexoChallenges, snapshotNexoChallenge } from "./services/nexo-challenges";
+import { buyNexoPlayerClause, loadNexoLeagueContracts, raiseNexoPlayerClause, sellNexoPlayerImmediately, setNexoPlayerBlindage, type NexoLeagueContracts, type NexoPlayerContract } from "./services/nexo-contracts";
+import { loadNexoNotifications, markAllNexoNotificationsRead, markNexoNotificationRead } from "./services/nexo-notifications";
+import { loadNexoClubActivity, loadNexoCompetitionTrends, type NexoClubActivity } from "./services/nexo-dashboard";
 import { withBasePath } from "./base-path";
 
 type Section = "inicio" | "equipo" | "tendencias" | "ligas" | "liga" | "perfil" | "ayuda" | "admin";
@@ -95,12 +98,14 @@ type EconomyRules = {
 };
 type AppNotification = {
   id: string;
-  type: "achievement" | "market" | "matchday";
+  type: "achievement" | "market" | "matchday" | "system";
   title: string;
   body: string;
   createdAt: number;
   read: boolean;
   achievementId?: string;
+  leagueId?: string;
+  targetSection?: "inicio" | "resumen" | "equipo" | "mercado" | "jornada" | "clasificacion" | "perfil";
 };
 type MarketHistoryEvent = {
   id: string;
@@ -255,10 +260,12 @@ type PrivateLeagueRules = {
   clausesEnabled: boolean;
   clauseMultiplier: number;
   clauseCutoffHours: number;
+  clauseRaiseCostPercent: number;
   blindagesEnabled: boolean;
   blindageDurationHours: number;
   directOffersEnabled: boolean;
   gameOffersEnabled: boolean;
+  immediateSaleEnabled: boolean;
   immediateSalePercent: number;
   captainMultiplier: number;
   lineupLockMinutes: number;
@@ -720,21 +727,22 @@ function NotificationCenter({ notifications, onOpen, onMarkAllRead, onClose }: {
         <span>{unread}</span>
         <p>
           <strong>{unread === 1 ? "Tienes un aviso nuevo" : `Tienes ${unread} avisos nuevos`}</strong>
-          <small>Los logros desbloqueados aparecerán aquí.</small>
+          <small>Mercado, jornadas, logros y avisos importantes.</small>
         </p>
         {unread > 0 && <button onClick={onMarkAllRead}>Marcar todo como leído</button>}
       </div>
       <div className="notification-list">
         {notifications.map((notification) => (
           <button key={notification.id} className={`${notification.read ? "read" : "unread"} ${notification.type}`} onClick={() => onOpen(notification)}>
-            <span>{notification.type === "achievement" ? "★" : notification.type === "market" ? "↗" : "◷"}</span>
+            <span>{notification.type === "achievement" ? "★" : notification.type === "market" ? "↗" : notification.type === "system" ? "N" : "◷"}</span>
             <p>
               <small>
-                {notification.type === "achievement" ? "LOGRO" : notification.type === "market" ? "MERCADO" : "JORNADA"} · {formatNotificationTime(notification.createdAt)}
+                {notification.type === "achievement" ? "LOGRO" : notification.type === "market" ? "MERCADO" : notification.type === "system" ? "NEXO" : "JORNADA"} · {formatNotificationTime(notification.createdAt)}
               </small>
               <strong>{notification.title}</strong>
               <em>{notification.body}</em>
               {notification.type === "achievement" && <b>Ver en mi vitrina →</b>}
+              {notification.leagueId && <b>Abrir sección →</b>}
             </p>
             {!notification.read && <i />}
           </button>
@@ -747,7 +755,7 @@ function NotificationCenter({ notifications, onOpen, onMarkAllRead, onClose }: {
           </div>
         )}
       </div>
-      <footer>Los avisos importantes se conservan hasta que los consultes.</footer>
+      <footer>Los avisos se guardan en tu cuenta y están disponibles en todos tus dispositivos.</footer>
     </section>
   );
 }
@@ -1504,6 +1512,21 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     return () => window.clearInterval(timer);
   }, [sessionUser?.id]);
   useEffect(() => {
+    if (!sessionUser || sessionUser.id === "demo_user") return;
+    void refreshBackendNotifications();
+    const timer = window.setInterval(() => void refreshBackendNotifications(), 60000);
+    const refreshWhenVisible = () => { if (document.visibilityState === "visible") void refreshBackendNotifications(); };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("nexo-notifications-updated", refreshWhenVisible);
+    window.addEventListener("nexo-user-market-updated", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("nexo-notifications-updated", refreshWhenVisible);
+      window.removeEventListener("nexo-user-market-updated", refreshWhenVisible);
+    };
+  }, [sessionUser?.id]);
+  useEffect(() => {
     const catalogById = new Map(
       Object.values(adminPlayerCatalog)
         .flat()
@@ -1697,6 +1720,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     void refreshBackendLineups();
     void refreshBackendMatchdays();
     void refreshBackendChallenges();
+    void refreshBackendNotifications();
   }
 
   async function refreshBackendLeagues() {
@@ -1767,6 +1791,24 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       setFantasyEvents(await loadNexoChallenges());
     } catch {
       if (sessionUser?.id === "demo_user") setFantasyEvents(createDemoFantasyEvents());
+    }
+  }
+
+  async function refreshBackendNotifications() {
+    try {
+      const inbox = await loadNexoNotifications();
+      setNotifications(inbox.map((item) => ({
+        id: item.id,
+        type: item.type,
+        title: item.title,
+        body: item.body,
+        createdAt: Date.parse(item.createdAt),
+        read: Boolean(item.readAt),
+        leagueId: item.leagueId,
+        targetSection: item.targetSection,
+      })));
+    } catch {
+      /* Conserva el último buzón visible si la red no está disponible. */
     }
   }
 
@@ -1911,10 +1953,25 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     notify(`Logro reclamado · +${reward} monedas`);
   }
 
-  function openNotification(notification: AppNotification) {
+  async function openNotification(notification: AppNotification) {
     setNotifications((current) => current.map((item) => (item.id === notification.id ? { ...item, read: true } : item)));
     setNotificationsOpen(false);
-    if (notification.type === "achievement") navigate("perfil");
+    if (sessionUser?.id !== "demo_user" && !notification.read) {
+      try { await markNexoNotificationRead(notification.id); } catch { /* Se reintentará al refrescar. */ }
+    }
+    if (notification.leagueId) {
+      setSelectedLeagueId(notification.leagueId);
+      const destination = notification.targetSection;
+      setLeagueAreaSection(destination && ["resumen", "equipo", "mercado", "jornada", "clasificacion"].includes(destination) ? destination as LeagueAreaSection : "resumen");
+      navigate("liga");
+    } else if (notification.targetSection === "perfil" || notification.type === "achievement") navigate("perfil");
+    else navigate("inicio");
+  }
+
+  async function markAllNotificationsRead() {
+    setNotifications((current) => current.map((item) => ({ ...item, read: true })));
+    if (sessionUser?.id === "demo_user") return;
+    try { await markAllNexoNotificationsRead(); } catch { notify("No se pudieron actualizar todos los avisos"); }
   }
 
   function claimCoinAction(actionId: string) {
@@ -2919,7 +2976,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       />
     );
   const displayUser = { ...initialData.user, ...sessionUser };
-  const visibleNotifications = notifications.filter((item) => (item.type === "achievement" ? preferences.achievementNotifications : item.type === "market" ? preferences.marketNotifications : preferences.matchdayNotifications));
+  const visibleNotifications = notifications.filter((item) => item.type === "system" || (item.type === "achievement" ? preferences.achievementNotifications : item.type === "market" ? preferences.marketNotifications : preferences.matchdayNotifications));
 
   return (
     <div className="app-shell">
@@ -2966,7 +3023,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
             <button className={`notification-button ${visibleNotifications.some((item) => !item.read) ? "has-unread" : ""}`} onClick={() => setNotificationsOpen((current) => !current)} aria-label={`Notificaciones · ${visibleNotifications.filter((item) => !item.read).length} sin leer`} aria-expanded={notificationsOpen}>
               ♢{visibleNotifications.some((item) => !item.read) && <i>{visibleNotifications.filter((item) => !item.read).length}</i>}
             </button>
-            {notificationsOpen && <NotificationCenter notifications={visibleNotifications} onOpen={openNotification} onMarkAllRead={() => setNotifications((current) => current.map((item) => ({ ...item, read: true })))} onClose={() => setNotificationsOpen(false)} />}
+            {notificationsOpen && <NotificationCenter notifications={visibleNotifications} onOpen={(item) => void openNotification(item)} onMarkAllRead={() => void markAllNotificationsRead()} onClose={() => setNotificationsOpen(false)} />}
           </div>
           <button className="profile-button" onClick={() => navigate("perfil")}>
             <Avatar label={displayUser.initials} />
@@ -2975,9 +3032,9 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
         </header>
 
         <main className="content">
-          {active === "inicio" && <Dashboard userName={displayUser.displayName} competition={competition} setCompetition={setCompetition} teamId={teamId} team={team} participations={participations} clubMotto={clubIdentityMeta[teamId]?.motto} leagues={leagues} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} onOpenLeague={openLeague} featuredFantasyEvent={fantasyEvents.find((event) => event.featured && event.competition === competition && event.status !== "finished")} onJoinFantasy={openFantasyJoin} navigate={navigate} />}
+          {active === "inicio" && <Dashboard userName={displayUser.displayName} competition={competition} setCompetition={setCompetition} teamId={teamId} team={team} participations={participations} clubMotto={clubIdentityMeta[teamId]?.motto} leagues={leagues} fixtures={matchFixtures} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} onOpenLeague={openLeague} featuredFantasyEvent={fantasyEvents.find((event) => event.featured && event.competition === competition && event.status !== "finished")} onJoinFantasy={openFantasyJoin} navigate={navigate} />}
           {active === "equipo" && <TeamView teamId={teamId} setTeamId={setTeamId} teams={teams} leagues={leagues} participations={participations} fantasyEvents={fantasyEvents} clubRules={clubRules} clubIdentityMeta={clubIdentityMeta} onUpdateClub={updateClubIdentity} competition={competition} setCompetition={setCompetition} freeLimit={initialData.rules.freeTeamsPerCompetition} onCreateTeam={() => setTeamCreatorOpen(true)} onOpenLeague={openLeague} onBrowseLeagues={() => navigate("ligas")} />}
-          {active === "tendencias" && <TrendsView competition={competition} setCompetition={setCompetition} query={query} setQuery={setQuery} position={position} setPosition={setPosition} />}
+          {active === "tendencias" && <TrendsView competition={competition} setCompetition={setCompetition} query={query} setQuery={setQuery} position={position} setPosition={setPosition} leagues={leagues} rankingRows={Object.values(leagueRankings).flat()} />}
           {active === "ligas" && <LeaguesView leagues={leagues} participations={participations} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} fantasyEvents={fantasyEvents.filter((event) => event.status !== "draft" && event.status !== "finished")} onOpenLeague={openLeague} onJoinPublic={() => setPublicJoinOpen(true)} onJoinFantasy={openFantasyJoin} onCreatePrivate={() => setPrivateLeagueCreatorOpen(true)} onJoinCode={findPrivateLeagueByCode} joinCode={joinCode} setJoinCode={setJoinCode} notify={notify} />}
           {active === "liga" && leagues.find((item) => item.id === selectedLeagueId) && (
             <LeagueDetailView
@@ -3276,10 +3333,12 @@ const defaultPrivateLeagueRules: Omit<PrivateLeagueRules, "accessCode" | "versio
   clausesEnabled: true,
   clauseMultiplier: 1.5,
   clauseCutoffHours: 24,
+  clauseRaiseCostPercent: 10,
   blindagesEnabled: true,
   blindageDurationHours: 24,
   directOffersEnabled: true,
   gameOffersEnabled: true,
+  immediateSaleEnabled: true,
   immediateSalePercent: 50,
   captainMultiplier: 2,
   lineupLockMinutes: 1,
@@ -3981,14 +4040,16 @@ function PrivateOperationRules({ rules, onChange }: { rules: Omit<PrivateLeagueR
         <div className="private-rules-grid compact">
           <PrivateRuleControl label="Multiplicador inicial" value={rules.clauseMultiplier} suffix="× valor" min={1} max={3} step={0.1} onChange={(value) => update("clauseMultiplier", value)} />
           <PrivateRuleControl label="Cierre del clausulazo" value={rules.clauseCutoffHours} suffix="h antes" min={0} max={72} step={6} onChange={(value) => update("clauseCutoffHours", value)} />
+          <PrivateRuleControl label="Coste de subir cláusula" value={rules.clauseRaiseCostPercent ?? 10} suffix="% del aumento" min={0} max={50} step={5} onChange={(value) => update("clauseRaiseCostPercent", value)} />
         </div>
       )}
       <PrivateRuleToggle label="Blindajes" description="Impide clausulazos durante el periodo configurado." enabled={rules.blindagesEnabled} onChange={(value) => update("blindagesEnabled", value)} />
       {rules.blindagesEnabled && <PrivateRuleControl label="Duración del blindaje" value={rules.blindageDurationHours} suffix="h" min={12} max={72} step={12} onChange={(value) => update("blindageDurationHours", value)} />}
       <PrivateRuleToggle label="Ofertas entre usuarios" description="Permite negociar jugadores de plantillas rivales." enabled={rules.directOffersEnabled} onChange={(value) => update("directOffersEnabled", value)} />
       <PrivateRuleToggle label="Ofertas automáticas del juego" description="El juego ofrece por jugadores puestos en venta." enabled={rules.gameOffersEnabled} onChange={(value) => update("gameOffersEnabled", value)} />
+      <PrivateRuleToggle label="Venta inmediata" description="Permite vender al juego sin esperar una oferta." enabled={rules.immediateSaleEnabled ?? true} onChange={(value) => update("immediateSaleEnabled", value)} />
       <div className="private-rules-grid compact">
-        <PrivateRuleControl label="Venta inmediata" value={rules.immediateSalePercent} suffix="% del valor" min={25} max={100} step={5} onChange={(value) => update("immediateSalePercent", value)} />
+        {(rules.immediateSaleEnabled ?? true) && <PrivateRuleControl label="Importe de venta inmediata" value={rules.immediateSalePercent} suffix="% del valor" min={25} max={100} step={5} onChange={(value) => update("immediateSalePercent", value)} />}
         <PrivateRuleControl label="Multiplicador de capitán" value={rules.captainMultiplier} suffix="× puntos" min={1} max={3} step={0.5} onChange={(value) => update("captainMultiplier", value)} />
         <PrivateRuleControl label="Cierre de alineación" value={rules.lineupLockMinutes} suffix="min antes" min={1} max={60} onChange={(value) => update("lineupLockMinutes", value)} />
       </div>
@@ -4130,7 +4191,9 @@ function FeaturedFantasyEvent({ event, joined, onJoin, onOpen }: { event: Fantas
   );
 }
 
-function Dashboard({ userName, competition, setCompetition, teamId, team, participations, clubMotto, leagues, featuredLeagueIds, onToggleFeaturedLeague, onOpenLeague, featuredFantasyEvent, onJoinFantasy, navigate }: { userName: string; competition: CompetitionName; setCompetition: (value: CompetitionName) => void; teamId: string; team: string; participations: LeagueParticipation[]; clubMotto?: string; leagues: LeagueSummary[]; featuredLeagueIds: string[]; onToggleFeaturedLeague: (leagueId: string) => void; onOpenLeague: (leagueId: string) => void; featuredFantasyEvent?: FantasyEvent; onJoinFantasy: (eventId?: string) => void; navigate: (value: Section) => void }) {
+function Dashboard({ userName, competition, setCompetition, teamId, team, participations, clubMotto, leagues, fixtures, featuredLeagueIds, onToggleFeaturedLeague, onOpenLeague, featuredFantasyEvent, onJoinFantasy, navigate }: { userName: string; competition: CompetitionName; setCompetition: (value: CompetitionName) => void; teamId: string; team: string; participations: LeagueParticipation[]; clubMotto?: string; leagues: LeagueSummary[]; fixtures: MatchFixture[]; featuredLeagueIds: string[]; onToggleFeaturedLeague: (leagueId: string) => void; onOpenLeague: (leagueId: string) => void; featuredFantasyEvent?: FantasyEvent; onJoinFantasy: (eventId?: string) => void; navigate: (value: Section) => void }) {
+  const [clubActivity, setClubActivity] = useState<NexoClubActivity[]>([]);
+  const [clubActivityLoading, setClubActivityLoading] = useState(true);
   const featuredLeagues = leagues.filter((league) => featuredLeagueIds.includes(league.id)).slice(0, 4);
   const clubParticipations = participations.filter((item) => item.teamId === teamId);
   const rankedPositions = clubParticipations
@@ -4138,6 +4201,24 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
     .map((rank) => Number.parseInt(rank ?? "", 10))
     .filter((rank) => Number.isFinite(rank) && rank > 0);
   const bestPosition = rankedPositions.length ? Math.min(...rankedPositions) : null;
+  const closedFixtures = fixtures.filter((fixture) => fixture.competition === competition && fixture.status === "final").length;
+  useEffect(() => {
+    let current = true;
+    setClubActivityLoading(true);
+    loadNexoClubActivity(teamId)
+      .then((rows) => {
+        if (current) setClubActivity(rows);
+      })
+      .catch(() => {
+        if (current) setClubActivity([]);
+      })
+      .finally(() => {
+        if (current) setClubActivityLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [teamId, participations.length]);
   const leagueAlert = (league: LeagueSummary, index: number) =>
     league.mode === "fantasy"
       ? { label: "Preparar once", tone: "lineup" }
@@ -4147,6 +4228,12 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
             tone: "market",
           }
         : { label: "Cierra en 4 días", tone: "deadline" };
+  const openLeagueDirectory = () => {
+    navigate("ligas");
+    window.requestAnimationFrame(() =>
+      window.requestAnimationFrame(() => document.getElementById("my-competitions")?.scrollIntoView({ behavior: "smooth", block: "start" })),
+    );
+  };
   return (
     <>
       <section className="page-heading">
@@ -4233,7 +4320,7 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
             <h2>Tus ligas destacadas</h2>
             <p>Solo lo importante, siempre a mano.</p>
           </div>
-          <button className="text-button" onClick={() => navigate("ligas")}>
+          <button className="text-button" onClick={openLeagueDirectory}>
             Gestionar ligas <span>→</span>
           </button>
         </div>
@@ -4273,7 +4360,7 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
               <h3>Fija las ligas que más utilizas</h3>
               <p>Márcalas con una estrella y aparecerán aquí con sus próximos avisos.</p>
             </div>
-            <button className="primary-button" onClick={() => navigate("ligas")}>
+            <button className="primary-button" onClick={openLeagueDirectory}>
               Elegir destacadas <span>→</span>
             </button>
           </article>
@@ -4291,13 +4378,28 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
               →
             </button>
           </div>
-          <div className="dashboard-activity-empty">
-            <span>↗</span>
-            <div>
-              <strong>Sin movimientos registrados</strong>
-              <small>Las operaciones reales de tus equipos aparecerán aquí.</small>
+          {clubActivity.length > 0 ? (
+            <div className="dashboard-activity-list">
+              {clubActivity.slice(0, 3).map((item) => (
+                <button key={item.id} onClick={() => onOpenLeague(item.leagueId)}>
+                  <span>↗</span>
+                  <p>
+                    <strong>{item.title}</strong>
+                    <small>{item.leagueName} · {formatNotificationTime(Date.parse(item.occurredAt))}</small>
+                  </p>
+                  <b>›</b>
+                </button>
+              ))}
             </div>
-          </div>
+          ) : (
+            <div className="dashboard-activity-empty">
+              <span>{clubActivityLoading ? "…" : "↗"}</span>
+              <div>
+                <strong>{clubActivityLoading ? "Cargando actividad" : "Sin movimientos registrados"}</strong>
+                <small>{clubActivityLoading ? "Consultando las operaciones confirmadas." : "Las operaciones reales de tus equipos aparecerán aquí."}</small>
+              </div>
+            </div>
+          )}
         </article>
         <article className="data-card">
           <span className="data-icon">✓</span>
@@ -4307,7 +4409,7 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
             <p>Las estadísticas se actualizarán una vez finalice cada partido.</p>
           </div>
           <span className="quota">
-            <strong>0</strong> partidos cerrados
+            <strong>{closedFixtures}</strong> {closedFixtures === 1 ? "partido cerrado" : "partidos cerrados"}
           </span>
         </article>
       </section>
@@ -4860,19 +4962,55 @@ const trendActivityGroups: {
   },
 ];
 
-function TrendsView({ competition, setCompetition, query, setQuery, position, setPosition }: { competition: CompetitionName; setCompetition: (value: CompetitionName) => void; query: string; setQuery: (value: string) => void; position: string; setPosition: (value: string) => void }) {
+function TrendsView({ competition, setCompetition, query, setQuery, position, setPosition, leagues, rankingRows }: { competition: CompetitionName; setCompetition: (value: CompetitionName) => void; query: string; setQuery: (value: string) => void; position: string; setPosition: (value: string) => void; leagues: LeagueSummary[]; rankingRows: NexoLeagueRankingRow[] }) {
   const [fullRankingOpen, setFullRankingOpen] = useState(false);
-  const trends = useMemo(() => getCompetitionTrends(competition), [competition]);
+  const [trends, setTrends] = useState<PlayerTrend[]>([]);
+  const [trendsLoading, setTrendsLoading] = useState(true);
+  const competitionId = competition === "Primera" ? "primera" : competition === "Segunda" ? "segunda" : "liga_f";
+  useEffect(() => {
+    let current = true;
+    setTrendsLoading(true);
+    loadNexoCompetitionTrends(competitionId)
+      .then((rows) => {
+        if (current) setTrends(rows);
+      })
+      .catch(() => {
+        if (current) setTrends([]);
+      })
+      .finally(() => {
+        if (current) setTrendsLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [competitionId]);
   const filtered = trends.filter((player) => (position === "Todos" || player.position === position) && `${player.name} ${player.club}`.toLocaleLowerCase("es").includes(query.toLocaleLowerCase("es")));
-  const risers = [...filtered].sort((a, b) => b.changePercent - a.changePercent).slice(0, 5);
-  const mostSigned = [...trends].sort((a, b) => b.signings - a.signings).slice(0, 5);
-  const bestPerformance = [...trends].sort((a, b) => b.performance - a.performance).slice(0, 4);
-  const indexHistory = Array.from({ length: 12 }, (_, index) => Number((trends.reduce((total, player) => total + player.history[index], 0) / trends.length).toFixed(2)));
+  const risers = [...filtered].filter((player) => player.changePercent > 0).sort((a, b) => b.changePercent - a.changePercent).slice(0, 5);
+  const mostSigned = [...trends].filter((player) => player.signings > 0).sort((a, b) => b.signings - a.signings).slice(0, 5);
+  const bestPerformance = [...trends].filter((player) => player.performance > 0).sort((a, b) => b.performance - a.performance).slice(0, 4);
+  const historyLength = Math.max(1, ...trends.map((player) => player.history.length));
+  const indexHistory = Array.from({ length: historyLength }, (_, index) => {
+    const values = trends.map((player) => player.history[Math.min(index, player.history.length - 1)]).filter(Number.isFinite);
+    return values.length ? Number((values.reduce((total, value) => total + value, 0) / values.length).toFixed(2)) : 0;
+  });
   const totalValue = trends.reduce((total, player) => total + player.value, 0);
-  const averageChange = trends.reduce((total, player) => total + player.changePercent, 0) / trends.length;
+  const averageChange = trends.length ? trends.reduce((total, player) => total + player.changePercent, 0) / trends.length : 0;
+  const movementCount = trends.reduce((total, player) => total + player.offersReceived + player.bidsReceived + player.marketListings + player.transfers + player.protections, 0);
+  const largestRise = [...trends].sort((a, b) => b.changePercent - a.changePercent)[0];
+  const competitionLeagueIds = new Set(leagues.filter((league) => league.competition === competition).map((league) => league.id));
+  const clubTrends = Array.from(
+    rankingRows.filter((row) => competitionLeagueIds.has(row.leagueId)).reduce((map, row) => {
+      const current = map.get(row.teamId) ?? { id: row.teamId, name: row.teamName, initials: row.teamShortName || row.initials, score: 0, results: 0, bestPosition: Number.POSITIVE_INFINITY };
+      current.score += row.totalPoints;
+      current.results += row.totalPoints > 0 ? 1 : 0;
+      current.bestPosition = Math.min(current.bestPosition, row.position);
+      map.set(row.teamId, current);
+      return map;
+    }, new Map<string, { id: string; name: string; initials: string; score: number; results: number; bestPosition: number }>()).values(),
+  ).filter((club) => club.score > 0).sort((a, b) => b.score - a.score).slice(0, 3);
   return (
     <>
-      <ClubTrendPulse competition={competition} />
+      <ClubTrendPulse competition={competition} clubs={clubTrends} />
       <section className="trends-hero">
         <div className="trends-hero-copy">
           <p className="eyebrow">INTELIGENCIA DE MERCADO</p>
@@ -4886,7 +5024,7 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
         </div>
         <div className="market-index">
           <div>
-            <small>ÍNDICE NEXO · 7 DÍAS</small>
+            <small>ÍNDICE NEXO · DATOS CONSOLIDADOS</small>
             <strong>{totalValue.toFixed(1).replace(".", ",")} M</strong>
             <span className={averageChange >= 0 ? "positive" : "negative"}>
               {averageChange >= 0 ? "↑" : "↓"} {Math.abs(averageChange).toFixed(1).replace(".", ",")} %
@@ -4894,7 +5032,7 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
           </div>
           <TrendBars values={indexHistory} />
           <footer>
-            <span>Hace 7 días</span>
+            <span>Primera instantánea</span>
             <span>Ahora</span>
           </footer>
         </div>
@@ -4907,18 +5045,18 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
         </article>
         <article>
           <small>Mayor subida</small>
-          <strong>+{Math.max(...trends.map((player) => player.changePercent)).toFixed(1)} %</strong>
-          <span>{[...trends].sort((a, b) => b.changePercent - a.changePercent)[0].name}</span>
+          <strong>{largestRise && largestRise.changePercent > 0 ? `+${largestRise.changePercent.toFixed(1)} %` : "—"}</strong>
+          <span>{largestRise && largestRise.changePercent > 0 ? largestRise.name : "Sin variaciones publicadas"}</span>
         </article>
         <article>
           <small>Movimientos analizados</small>
-          <strong>{trends.reduce((total, player) => total + player.signings, 0).toLocaleString("es-ES")}</strong>
-          <span>ventana de 72 horas</span>
+          <strong>{movementCount.toLocaleString("es-ES")}</strong>
+          <span>operaciones confirmadas</span>
         </article>
         <article>
           <small>Próximo cálculo</small>
-          <strong>02:14 h</strong>
-          <span>mismo valor en todas las ligas</span>
+          <strong>Automático</strong>
+          <span>tras importar estadísticas y mercados</span>
         </article>
       </section>
       <section className="trend-toolbar">
@@ -4933,7 +5071,7 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
             </button>
           ))}
         </div>
-        <button className="trend-period">Últimos 7 días⌄</button>
+        <button className="trend-period">Histórico disponible</button>
       </section>
       <section className="trends-main-grid">
         <article className="trend-panel trend-movers">
@@ -4942,22 +5080,22 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
               <p className="eyebrow">VALOR DE MERCADO</p>
               <h2>Mayores subidas</h2>
             </div>
-            <span className="live-calculation">● ACTUALIZADO</span>
+            <span className="live-calculation">● {trendsLoading ? "CARGANDO" : "DATOS REALES"}</span>
           </div>
           {risers.map((player, index) => (
             <TrendPlayerRow key={player.id} player={player} rank={index + 1} />
           ))}
           {risers.length === 0 && (
             <div className="empty-state">
-              <strong>Sin resultados</strong>
-              <p>Prueba con otro filtro.</p>
+              <strong>{trendsLoading ? "Cargando valores" : "Sin subidas registradas"}</strong>
+              <p>{trendsLoading ? "Consultando el cálculo consolidado." : "Aparecerán cuando exista una instantánea anterior comparable."}</p>
             </div>
           )}
         </article>
         <article className="trend-panel most-signed">
           <p className="eyebrow">DEMANDA GLOBAL</p>
           <h2>Más fichados</h2>
-          <p>Altas netas en ligas durante la ventana actual.</p>
+          <p>Traspasos confirmados en los mercados de todas las ligas.</p>
           <div className="signings-chart">
             {mostSigned.map((player, index) => (
               <div key={player.id}>
@@ -4965,7 +5103,7 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
                 <i>
                   <b
                     style={{
-                      width: `${(player.signings / mostSigned[0].signings) * 100}%`,
+                      width: `${(player.signings / Math.max(1, mostSigned[0]?.signings ?? 1)) * 100}%`,
                     }}
                   />
                 </i>
@@ -4973,6 +5111,7 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
                 <small>#{index + 1}</small>
               </div>
             ))}
+            {!mostSigned.length && <div className="empty-state"><strong>{trendsLoading ? "Cargando fichajes" : "Sin fichajes confirmados"}</strong><p>El ranking se activará con los primeros traspasos reales.</p></div>}
           </div>
         </article>
       </section>
@@ -4983,8 +5122,8 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
             <p className="eyebrow">FORMA DEPORTIVA</p>
             <h2>Mejor rendimiento</h2>
           </div>
-          <button className="text-button" onClick={() => setFullRankingOpen(true)}>
-            Ver clasificación completa →
+          <button className="text-button" disabled={!bestPerformance.length} onClick={() => setFullRankingOpen(true)}>
+            {bestPerformance.length ? "Ver clasificación completa →" : "Clasificación pendiente"}
           </button>
         </div>
         <div className="performance-grid">
@@ -5004,15 +5143,16 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
               <TrendBars values={player.history.slice(-6)} compact />
             </article>
           ))}
+          {!bestPerformance.length && <div className="empty-state"><strong>{trendsLoading ? "Cargando rendimiento" : "Sin puntos oficiales"}</strong><p>Se mostrará al cerrar la primera jornada con estadísticas.</p></div>}
         </div>
       </section>
       <section className="algorithm-note">
         <span>ƒ</span>
         <div>
           <strong>Valor global y protegido</strong>
-          <p>El cálculo agrupa demanda, transferencias netas y prima mediana de las pujas. Excluye acciones repetidas y aplica límites configurables antes de publicar un único valor para todas las ligas.</p>
+          <p>Los indicadores agrupan alineaciones congeladas, puntos oficiales, ofertas, pujas, anuncios, blindajes y traspasos confirmados. Si todavía no existe actividad, no se generan cifras de relleno.</p>
         </div>
-        <b>Revisión cada 6 h</b>
+        <b>Actualización tras cada proceso oficial</b>
       </section>
       {fullRankingOpen && <FullPerformanceRankingDialog players={trends} competition={competition} onClose={() => setFullRankingOpen(false)} />}
     </>
@@ -5096,65 +5236,39 @@ function FullPerformanceRankingDialog({ players, competition, onClose }: { playe
   );
 }
 
-function ClubTrendPulse({ competition }: { competition: CompetitionName }) {
-  const clubs = [
-    {
-      name: "Atlético Norte",
-      initials: "AN",
-      score: 914,
-      change: 28,
-      history: [72, 75, 77, 79, 82, 86, 91],
-    },
-    {
-      name: "Distrito Sur",
-      initials: "DS",
-      score: 887,
-      change: 19,
-      history: [70, 74, 73, 78, 80, 85, 88],
-    },
-    {
-      name: "Barrio XI",
-      initials: "BX",
-      score: 842,
-      change: 31,
-      history: [62, 67, 70, 72, 78, 80, 84],
-    },
-  ];
+function ClubTrendPulse({ competition, clubs }: { competition: CompetitionName; clubs: { id: string; name: string; initials: string; score: number; results: number; bestPosition: number }[] }) {
   return (
     <section className="club-trend-pulse">
       <header>
         <div>
           <p className="eyebrow">CLUBES · {competition.toUpperCase()}</p>
-          <h2>Quién está creciendo</h2>
-          <p>Evolución normalizada del ranking durante los últimos 30 días.</p>
+          <h2>Clubes con más puntos</h2>
+          <p>Resultados oficiales acumulados en las ligas de esta competición.</p>
         </div>
-        <button>Ranking completo →</button>
+        <span className="activity-privacy-badge">Datos reales</span>
       </header>
       <div>
         {clubs.map((club, index) => (
-          <article key={club.name}>
+          <article key={club.id}>
             <b>0{index + 1}</b>
             <span>{club.initials}</span>
             <p>
               <strong>{club.name}</strong>
               <small>
-                +{club.change} puntos · {club.score} total
+                {club.score.toLocaleString("es-ES")} puntos · {club.results} resultados
               </small>
             </p>
-            <div>
-              {club.history.map((value, point) => (
-                <i key={point} style={{ height: `${value}%` }} />
-              ))}
-            </div>
-            <em className="positive">↑ {index + 1 + (index === 2 ? 2 : 0)}</em>
+            <div />
+            <em className="positive">Mejor: {Number.isFinite(club.bestPosition) ? `${club.bestPosition}.º` : "—"}</em>
           </article>
         ))}
+        {!clubs.length && <div className="club-ranking-empty"><span>—</span><div><strong>Sin clasificación real todavía</strong><p>Los clubes aparecerán después de la primera jornada puntuada.</p></div></div>}
       </div>
       <footer>
         <span>★</span>
         <p>
-          <strong>Más títulos este mes: Atlético Norte</strong>
-          <small>2 campeonatos · 3 podios · 5 resultados computados</small>
+          <strong>{clubs.length ? `Líder actual: ${clubs[0].name}` : "Ranking pendiente"}</strong>
+          <small>{clubs.length ? `${clubs[0].score.toLocaleString("es-ES")} puntos consolidados` : "No se muestran clubes ni resultados de demostración"}</small>
         </p>
         <b>Actualización tras cada jornada cerrada</b>
       </footer>
@@ -5175,7 +5289,7 @@ function LeagueActivityTrends({ trends }: { trends: PlayerTrend[] }) {
       </div>
       <div className="activity-trend-grid">
         {trendActivityGroups.map((group) => {
-          const leaders = [...trends].sort((a, b) => b[group.metric] - a[group.metric]).slice(0, 3);
+          const leaders = [...trends].filter((player) => player[group.metric] > 0).sort((a, b) => b[group.metric] - a[group.metric]).slice(0, 3);
           const maximum = leaders[0]?.[group.metric] ?? 1;
           return (
             <article className="activity-trend-card" key={group.metric}>
@@ -5211,6 +5325,7 @@ function LeagueActivityTrends({ trends }: { trends: PlayerTrend[] }) {
                     </strong>
                   </div>
                 ))}
+                {!leaders.length && <div className="empty-state"><strong>Sin actividad todavía</strong><p>Este ranking se completará con acciones reales.</p></div>}
               </div>
             </article>
           );
@@ -5273,14 +5388,6 @@ function LeaguesView({ leagues, participations, featuredLeagueIds, onToggleFeatu
           <p className="eyebrow">COMPITE A TU MANERA</p>
           <h1>Ligas</h1>
           <p>Crea una competición o únete a una que ya esté en marcha.</p>
-        </div>
-        <div className="league-heading-actions">
-          <button className="secondary-button" onClick={onJoinPublic}>
-            Unirme a una liga
-          </button>
-          <button className="primary-button" onClick={onCreatePrivate}>
-            ＋ Crear liga
-          </button>
         </div>
       </section>
       <section className="league-modes">
@@ -5436,7 +5543,7 @@ function MyCompetitions({ leagues, featuredIds, onToggleFeatured, onOpenLeague }
   };
 
   return (
-    <section className="section-block my-competitions-section">
+    <section className="section-block my-competitions-section" id="my-competitions">
       <div className="section-title competitions-title">
         <div>
           <p className="eyebrow">ACTIVAS</p>
@@ -5590,7 +5697,7 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
       {section === "equipo" && (!fantasyEvent || fantasyEvent.snapshot) && <LeagueSquadView squad={squad} starters={starters} league={league} marketPlayers={fantasyScopedPlayers} fixtures={fixtures} participationId={participation?.id ?? ""} budget={participation?.budget ?? 0} fantasyMatchdayBudget={fantasyEvent?.snapshot?.budget ?? marketRules.fantasyMatchdayBudget} fantasyOptions={marketRules} fantasyEvent={fantasyEvent} scoringRules={scoringRules} fantasyLineup={fantasyLineup} previousFantasyLineup={previousFantasyLineup} onSaveFantasyLineup={onSaveFantasyLineup} playerContracts={playerContracts} playerOffers={playerOffers} onChangePlayerContract={onChangePlayerContract} onCreatePlayerOffer={onCreatePlayerOffer} onRespondPlayerOffer={onRespondPlayerOffer} onAdjustBudget={onAdjustBudget} onImmediateSale={onImmediateSale} backendEnabled={backendMarketEnabled} notify={notify} />}
       {section === "mercado" && <LeagueMarketView league={league} players={fantasyScopedPlayers} squad={squad} budget={participation?.budget ?? 100} rules={marketRules} backendEnabled={backendMarketEnabled} bids={bids} onChangeBids={onChangeBids} ownedListings={ownedMarketListings} receivedOffers={receivedMarketOffers} onRespondOffer={onRespondPlayerOffer} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} onGenerateSystemOffers={() => ownedMarketListings.forEach(({ player }) => onCreatePlayerOffer(player, "game"))} notify={notify} />}
       {section === "jornada" && <LeagueMatchdayView squad={squad} competition={league.competition} fixtures={fixtures} scoringRules={scoringRules} settlementRules={settlementRules} onPrepareTeam={() => onSectionChange("equipo")} notify={notify} />}
-      {section === "clasificacion" && <LeagueRankingView team={team} competition={league.competition} rankingRows={rankingRows} backendEnabled={backendMarketEnabled} budget={participation?.budget ?? 0} rules={marketRules} bidCommitment={bids.reduce((total, bid) => total + bid.amount, 0)} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={onClausePurchase} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} currentUserIsAdmin={canManagePrivateLeague} privateAdmin={privateAdmin} onReport={onReport} />}
+      {section === "clasificacion" && <LeagueRankingView leagueId={league.id} team={team} competition={league.competition} rankingRows={rankingRows} backendEnabled={backendMarketEnabled} budget={participation?.budget ?? 0} rules={marketRules} bidCommitment={bids.reduce((total, bid) => total + bid.amount, 0)} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={onClausePurchase} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} currentUserIsAdmin={canManagePrivateLeague} privateAdmin={privateAdmin} onReport={onReport} notify={notify} />}
       {optionsOpen && <LeagueOptionsDialog league={league} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} isAdmin={canManagePrivateLeague} participants={privateParticipants} reports={reports} onManage={() => { setOptionsOpen(false); onManagePrivateLeague(); }} onResolveReport={onResolveReport} onLeave={onLeaveLeague} onClose={() => setOptionsOpen(false)} />}
     </>
   );
@@ -6071,6 +6178,7 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, par
   const [selectedTeamMatchday, setSelectedTeamMatchday] = useState(activeMatchday);
   const [fantasyCommand, setFantasyCommand] = useState<FantasyBuilderCommand | null>(null);
   const [backendUserMarket, setBackendUserMarket] = useState<NexoLeagueUserMarket | null>(null);
+  const [backendContracts, setBackendContracts] = useState<NexoLeagueContracts | null>(null);
 
   async function refreshUserMarket() {
     if (!backendEnabled || league.mode === "fantasy") return;
@@ -6078,6 +6186,15 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, par
       setBackendUserMarket(await loadNexoLeagueUserMarket(league.id));
     } catch (error) {
       notify(error instanceof Error ? error.message : "No se pudo cargar el mercado entre usuarios");
+    }
+  }
+
+  async function refreshContracts() {
+    if (!backendEnabled || league.mode === "fantasy") return;
+    try {
+      setBackendContracts(await loadNexoLeagueContracts(league.id));
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "No se pudieron cargar los contratos");
     }
   }
 
@@ -6093,8 +6210,8 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, par
     setSelectedTeamMatchday(activeMatchday);
   }, [activeMatchday]);
   useEffect(() => {
-    void refreshUserMarket();
-    const refresh = () => void refreshUserMarket();
+    void Promise.all([refreshUserMarket(), refreshContracts()]);
+    const refresh = () => void Promise.all([refreshUserMarket(), refreshContracts()]);
     window.addEventListener("nexo-user-market-updated", refresh);
     return () => window.removeEventListener("nexo-user-market-updated", refresh);
   }, [backendEnabled, league.id, league.mode]);
@@ -6133,13 +6250,14 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, par
   const managedBenchPlayer = currentBench.find((player) => player.id === managedBenchPlayerId);
   const managedBackendListing = managedBenchPlayer ? backendUserMarket?.listings.find((listing) => listing.mine && listing.playerId === managedBenchPlayer.id) : undefined;
   const managedBackendOffers = managedBenchPlayer ? backendUserMarket?.receivedOffers.filter((offer) => offer.playerId === managedBenchPlayer.id) ?? [] : [];
+  const managedBackendContract = managedBenchPlayer ? backendContracts?.contracts.find((contract) => contract.playerId === managedBenchPlayer.id && contract.mine) : undefined;
   const managedContract = managedBenchPlayer
     ? ({ ...(playerContracts[`${participationId}:${managedBenchPlayer.id}`] ?? {
-        clause: Number((managedBenchPlayer.value * 1.5).toFixed(1)),
+        clause: managedBackendContract?.clause ?? Number((managedBenchPlayer.value * 1.5).toFixed(1)),
         listed: false,
         untouchable: false,
         offers: 0,
-      }), listed: Boolean(managedBackendListing) || Boolean(playerContracts[`${participationId}:${managedBenchPlayer.id}`]?.listed), offers: backendEnabled ? managedBackendOffers.filter((offer) => offer.status === "active" && Date.parse(offer.expiresAt) > Date.now()).length : (playerContracts[`${participationId}:${managedBenchPlayer.id}`]?.offers ?? 0) })
+      }), clause: managedBackendContract?.clause ?? playerContracts[`${participationId}:${managedBenchPlayer.id}`]?.clause ?? Number((managedBenchPlayer.value * 1.5).toFixed(1)), blindUntil: managedBackendContract?.blindUntil ? Date.parse(managedBackendContract.blindUntil) : playerContracts[`${participationId}:${managedBenchPlayer.id}`]?.blindUntil, listed: Boolean(managedBackendListing) || Boolean(playerContracts[`${participationId}:${managedBenchPlayer.id}`]?.listed), offers: backendEnabled ? managedBackendOffers.filter((offer) => offer.status === "active" && Date.parse(offer.expiresAt) > Date.now()).length : (playerContracts[`${participationId}:${managedBenchPlayer.id}`]?.offers ?? 0) })
     : undefined;
   const managedOffers = managedBenchPlayer ? (playerOffers[`${participationId}:${managedBenchPlayer.id}`] ?? []) : [];
 
@@ -6257,7 +6375,9 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, par
               const contract = playerContracts[`${participationId}:${player.id}`];
               const backendListing = backendUserMarket?.listings.find((listing) => listing.mine && listing.playerId === player.id);
               const listed = backendEnabled ? Boolean(backendListing) : Boolean(contract?.listed);
-              const blind = Boolean(contract?.blindUntil && contract.blindUntil > Date.now());
+              const realContract = backendContracts?.contracts.find((item) => item.playerId === player.id && item.mine);
+              const blindUntil = realContract?.blindUntil ? Date.parse(realContract.blindUntil) : contract?.blindUntil;
+              const blind = Boolean(blindUntil && blindUntil > Date.now());
               const activeOfferCount = backendEnabled ? (backendUserMarket?.receivedOffers ?? []).filter((offer) => offer.playerId === player.id && offer.status === "active" && Date.parse(offer.expiresAt) > Date.now()).length : (playerOffers[`${participationId}:${player.id}`] ?? []).filter((offer) => offer.status === "active" && offer.expiresAt > Date.now()).length;
               return (
                 <button className={`bench-player selectable-bench ${listed ? "listed" : ""}`} key={player.id} onClick={() => setManagedBenchPlayerId(player.id)}>
@@ -6326,6 +6446,8 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, par
           backendEnabled={backendEnabled}
           backendMarket={backendUserMarket}
           onRefreshBackendMarket={refreshUserMarket}
+          backendContracts={backendContracts}
+          onRefreshBackendContracts={refreshContracts}
           budget={budget}
           contract={managedContract}
           offers={managedOffers}
@@ -7195,7 +7317,7 @@ function offerValidityLabel(expiresAt: number, now: number) {
   return `${hours} h ${minutes} min`;
 }
 
-function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMarket, backendEnabled, backendMarket, onRefreshBackendMarket, budget, contract, offers, onChangeContract, onCreateRivalOffer, onRespondOffer, onAdjustBudget, onImmediateSale, onClose, notify }: { player: InitialSquadPlayer; leagueId: string; competition: CompetitionName; exclusiveMarket: boolean; backendEnabled: boolean; backendMarket: NexoLeagueUserMarket | null; onRefreshBackendMarket: () => Promise<void>; budget: number; contract: PlayerContract; offers: PlayerOffer[]; onChangeContract: (contract: PlayerContract) => void; onCreateRivalOffer: () => void; onRespondOffer: (offerId: string, accept: boolean) => void; onAdjustBudget: (difference: number) => void; onImmediateSale: () => void; onClose: () => void; notify: (message: string) => void }) {
+function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMarket, backendEnabled, backendMarket, onRefreshBackendMarket, backendContracts, onRefreshBackendContracts, budget, contract, offers, onChangeContract, onCreateRivalOffer, onRespondOffer, onAdjustBudget, onImmediateSale, onClose, notify }: { player: InitialSquadPlayer; leagueId: string; competition: CompetitionName; exclusiveMarket: boolean; backendEnabled: boolean; backendMarket: NexoLeagueUserMarket | null; onRefreshBackendMarket: () => Promise<void>; backendContracts: NexoLeagueContracts | null; onRefreshBackendContracts: () => Promise<void>; budget: number; contract: PlayerContract; offers: PlayerOffer[]; onChangeContract: (contract: PlayerContract) => void; onCreateRivalOffer: () => void; onRespondOffer: (offerId: string, accept: boolean) => void; onAdjustBudget: (difference: number) => void; onImmediateSale: () => void; onClose: () => void; notify: (message: string) => void }) {
   const [panel, setPanel] = useState<"overview" | "list" | "clause" | "offers" | "history" | "sell">("overview");
   const [now, setNow] = useState(Date.now());
   const [confirmOfferId, setConfirmOfferId] = useState<string | null>(null);
@@ -7204,7 +7326,10 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
   const [marketError, setMarketError] = useState("");
   const trend = getCompetitionTrends(competition).find((item) => item.id === player.id);
   const blindActive = Boolean(contract.blindUntil && contract.blindUntil > Date.now());
-  const immediateValue = Number((player.value * 0.5).toFixed(1));
+  const immediateSalePercent = backendContracts?.rules.immediateSalePercent ?? 50;
+  const blindageDurationHours = backendContracts?.rules.blindageDurationHours ?? 24;
+  const clauseRaiseCostPercent = backendContracts?.rules.clauseRaiseCostPercent ?? 10;
+  const immediateValue = Number((player.value * immediateSalePercent / 100).toFixed(2));
   const backendListing = backendMarket?.listings.find((listing) => listing.mine && listing.playerId === player.id);
   const isListed = backendEnabled ? Boolean(backendListing) : contract.listed;
   const backendPlayerOffers: PlayerOffer[] = (backendMarket?.receivedOffers ?? []).filter((offer) => offer.playerId === player.id).map((offer) => ({ id: offer.offerId, source: "rival", bidderName: offer.bidderName ?? offer.bidderTeamName ?? "Usuario rival", bidderInitials: offer.bidderInitials ?? "R", amount: offer.amount, status: offer.status, createdAt: Date.parse(offer.createdAt), expiresAt: Date.parse(offer.expiresAt) }));
@@ -7216,17 +7341,29 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
     return () => window.clearInterval(timer);
   }, []);
 
-  function raiseClause(percent: number) {
+  async function raiseClause(percent: number) {
     const nextClause = Number((contract.clause * (1 + percent / 100)).toFixed(1));
-    const cost = Number(((nextClause - contract.clause) * 0.1).toFixed(1));
-    if (cost > budget) {
+    const cost = Number(((nextClause - contract.clause) * clauseRaiseCostPercent / 100).toFixed(2));
+    if (cost > (backendContracts?.budget ?? budget)) {
       notify("No tienes saldo suficiente para esta mejora");
       return;
     }
-    onAdjustBudget(-cost);
-    onChangeContract({ ...contract, clause: nextClause });
-    setPanel("overview");
-    notify(`Cláusula elevada a ${nextClause.toFixed(1).replace(".", ",")} M`);
+    setMarketBusy(true);
+    try {
+      if (backendEnabled) {
+        const result = await raiseNexoPlayerClause(leagueId, player.id, nextClause);
+        onChangeContract({ ...contract, clause: result.clause });
+        await onRefreshBackendContracts();
+        window.dispatchEvent(new CustomEvent("nexo-user-market-updated"));
+      } else {
+        onAdjustBudget(-cost);
+        onChangeContract({ ...contract, clause: nextClause });
+      }
+      setPanel("overview");
+      notify(`Cláusula elevada a ${nextClause.toFixed(1).replace(".", ",")} M`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "No se pudo subir la cláusula");
+    } finally { setMarketBusy(false); }
   }
 
   async function toggleListing() {
@@ -7310,10 +7447,32 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
     }
   }
 
-  function toggleBlind() {
-    const nextBlindUntil = blindActive ? undefined : Date.now() + 24 * 60 * 60 * 1000;
-    onChangeContract({ ...contract, blindUntil: nextBlindUntil });
-    notify(nextBlindUntil ? "Blindaje activado durante 24 horas" : "Blindaje retirado");
+  async function toggleBlind() {
+    setMarketBusy(true);
+    try {
+      if (backendEnabled) {
+        const result = await setNexoPlayerBlindage(leagueId, player.id, !blindActive);
+        onChangeContract({ ...contract, blindUntil: result.blindUntil ? Date.parse(result.blindUntil) : undefined });
+        await onRefreshBackendContracts();
+        window.dispatchEvent(new CustomEvent("nexo-user-market-updated"));
+      } else onChangeContract({ ...contract, blindUntil: blindActive ? undefined : Date.now() + blindageDurationHours * 3600000 });
+      notify(blindActive ? "Blindaje retirado" : `Blindaje activado durante ${blindageDurationHours} horas`);
+    } catch (error) { notify(error instanceof Error ? error.message : "No se pudo modificar el blindaje"); }
+    finally { setMarketBusy(false); }
+  }
+
+  async function sellImmediately() {
+    setMarketBusy(true);
+    try {
+      if (backendEnabled) {
+        const result = await sellNexoPlayerImmediately(leagueId, player.id);
+        await Promise.all([onRefreshBackendContracts(), onRefreshBackendMarket()]);
+        window.dispatchEvent(new CustomEvent("nexo-user-market-updated"));
+        notify(`${player.name} vendido por ${result.amount.toFixed(1).replace(".", ",")} M`);
+        onClose();
+      } else onImmediateSale();
+    } catch (error) { notify(error instanceof Error ? error.message : "No se pudo vender al jugador"); }
+    finally { setMarketBusy(false); }
   }
 
   return (
@@ -7397,10 +7556,10 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
                     <small>{isListed ? "Modifica el precio o retíralo" : "Elige un precio desde su valor actual"}</small>
                   </div>
                 </button>
-                <button className={blindActive ? "active" : ""} onClick={toggleBlind}>
+                <button className={blindActive ? "active" : ""} onClick={() => void toggleBlind()} disabled={marketBusy || (backendEnabled && !backendContracts?.rules.blindagesEnabled)}>
                   <span>◆</span>
                   <div>
-                    <strong>{blindActive ? "Jugador blindado" : "Blindar 24 horas"}</strong>
+                    <strong>{blindActive ? "Jugador blindado" : `Blindar ${blindageDurationHours} horas`}</strong>
                     <small>Impide cualquier clausulazo</small>
                   </div>
                 </button>
@@ -7473,9 +7632,9 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
             <div className="clause-options">
               {[10, 25, 50].map((percent) => {
                 const next = Number((contract.clause * (1 + percent / 100)).toFixed(1));
-                const cost = Number(((next - contract.clause) * 0.1).toFixed(1));
+                const cost = Number(((next - contract.clause) * clauseRaiseCostPercent / 100).toFixed(2));
                 return (
-                  <button key={percent} onClick={() => raiseClause(percent)}>
+                  <button key={percent} onClick={() => void raiseClause(percent)} disabled={marketBusy}>
                     <span>+{percent}%</span>
                     <strong>{next.toFixed(1).replace(".", ",")} M</strong>
                     <small>Coste {cost.toFixed(1).replace(".", ",")} M</small>
@@ -7483,7 +7642,7 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
                 );
               })}
             </div>
-            <small className="management-rule-note">Saldo disponible: {budget.toFixed(1).replace(".", ",")} M · el coste es demostrativo y quedará configurable.</small>
+            <small className="management-rule-note">Saldo disponible: {(backendContracts?.budget ?? budget).toFixed(1).replace(".", ",")} M · coste configurable: {clauseRaiseCostPercent}% del aumento.</small>
           </section>
         )}
 
@@ -7558,9 +7717,9 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
             <span>!</span>
             <h3>¿Vender inmediatamente?</h3>
             <p>
-              Recibirás el 50% de su valor: <strong>{immediateValue.toFixed(1).replace(".", ",")} M</strong>. El jugador abandonará tu banquillo y la operación no se puede deshacer.
+              Recibirás el {immediateSalePercent}% de su valor: <strong>{immediateValue.toFixed(1).replace(".", ",")} M</strong>. El jugador abandonará tu banquillo y la operación no se puede deshacer.
             </p>
-            <button className="danger-confirm" onClick={onImmediateSale}>
+            <button className="danger-confirm" onClick={() => void sellImmediately()} disabled={marketBusy || (backendEnabled && !backendContracts?.rules.immediateSaleEnabled)}>
               Confirmar venta por {immediateValue.toFixed(1).replace(".", ",")} M
             </button>
           </section>
@@ -9560,8 +9719,13 @@ function rivalRoster(competition: CompetitionName, offset: number) {
   });
 }
 
-function LeagueRankingView({ team, competition, rankingRows, backendEnabled, budget, rules, bidCommitment, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, isPrivateLeague, currentUserIsAdmin, privateAdmin, onReport }: { team: FantasyTeamSummary; competition: CompetitionName; rankingRows: NexoLeagueRankingRow[]; backendEnabled: boolean; budget: number; rules: MarketRules; bidCommitment: number; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; isPrivateLeague: boolean; currentUserIsAdmin: boolean; privateAdmin?: PrivateLeagueParticipant; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null }) {
+function LeagueRankingView({ leagueId, team, competition, rankingRows, backendEnabled, budget, rules, bidCommitment, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, isPrivateLeague, currentUserIsAdmin, privateAdmin, onReport, notify }: { leagueId: string; team: FantasyTeamSummary; competition: CompetitionName; rankingRows: NexoLeagueRankingRow[]; backendEnabled: boolean; budget: number; rules: MarketRules; bidCommitment: number; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; isPrivateLeague: boolean; currentUserIsAdmin: boolean; privateAdmin?: PrivateLeagueParticipant; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null; notify: (message: string) => void }) {
   const [selectedRival, setSelectedRival] = useState<RivalTeam | null>(null);
+  const [backendContracts, setBackendContracts] = useState<NexoLeagueContracts | null>(null);
+  useEffect(() => {
+    if (!backendEnabled) return;
+    void loadNexoLeagueContracts(leagueId).then(setBackendContracts).catch((error) => notify(error instanceof Error ? error.message : "No se pudieron cargar los contratos"));
+  }, [backendEnabled, leagueId]);
   const privateAdminRival =
     isPrivateLeague && !currentUserIsAdmin
       ? {
@@ -9674,12 +9838,22 @@ function LeagueRankingView({ team, competition, rankingRows, backendEnabled, bud
           </div>
         )}
       </div>
-      {selectedRival && <RivalTeamSheet rival={selectedRival} competition={competition} budget={budget} sentOffers={sentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={(player, clause, blind) => onClausePurchase(selectedRival.id, player, clause, blind)} onSaveOffer={(player, amount) => saveOffer(selectedRival, player, amount)} onReport={isPrivateLeague ? (category, details) => onReport(selectedRival, category, details) : undefined} onClose={() => setSelectedRival(null)} />}
+      {selectedRival && <RivalTeamSheet rival={selectedRival} competition={competition} budget={backendContracts?.budget ?? budget} sentOffers={sentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} backendContracts={backendContracts} onClausePurchase={async (player, clause, blind) => {
+        if (!backendEnabled) return onClausePurchase(selectedRival.id, player, clause, blind);
+        try {
+          const result = await buyNexoPlayerClause(leagueId, player.id);
+          setBackendContracts(await loadNexoLeagueContracts(leagueId));
+          window.dispatchEvent(new CustomEvent("nexo-user-market-updated"));
+          notify(`${player.name} fichado por ${result.amount.toFixed(1).replace(".", ",")} M mediante clausulazo`);
+          setSelectedRival(null);
+          return null;
+        } catch (error) { return error instanceof Error ? error.message : "No se pudo completar el clausulazo"; }
+      }} onSaveOffer={(player, amount) => saveOffer(selectedRival, player, amount)} onReport={isPrivateLeague ? (category, details) => onReport(selectedRival, category, details) : undefined} onClose={() => setSelectedRival(null)} />}
     </section>
   );
 }
 
-function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchases, matchdayStartAt, onSaveOffer, onClausePurchase, onReport, onClose }: { rival: RivalTeam; competition: CompetitionName; budget: number; sentOffers: SentOffer[]; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onSaveOffer: (player: InitialSquadPlayer, amount: number) => string | null; onClausePurchase: (player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; onReport?: (category: ReportCategory, details: string) => string | null; onClose: () => void }) {
+function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchases, matchdayStartAt, backendContracts, onSaveOffer, onClausePurchase, onReport, onClose }: { rival: RivalTeam; competition: CompetitionName; budget: number; sentOffers: SentOffer[]; clausePurchases: ClausePurchase[]; matchdayStartAt: number; backendContracts: NexoLeagueContracts | null; onSaveOffer: (player: InitialSquadPlayer, amount: number) => string | null; onClausePurchase: (player: InitialSquadPlayer, clause: number, blind: boolean) => Promise<string | null> | string | null; onReport?: (category: ReportCategory, details: string) => string | null; onClose: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState<"plantilla" | "trayectoria">("plantilla");
   const [offerPlayer, setOfferPlayer] = useState<InitialSquadPlayer | null>(null);
@@ -9910,6 +10084,8 @@ function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchase
             rival={rival}
             budget={budget}
             matchdayStartAt={matchdayStartAt}
+            backendContract={backendContracts?.contracts.find((contract) => contract.playerId === offerPlayer.id && contract.ownerMembershipId === rival.id)}
+            clauseCutoffAt={backendContracts?.clauseCutoffAt}
             onClausePurchase={(clause, blind) => onClausePurchase(offerPlayer, clause, blind)}
             existingOffer={sentOffers.find((offer) => offer.targetTeamId === rival.id && offer.targetPlayerId === offerPlayer.id && offer.status === "active" && offer.expiresAt > Date.now())}
             onClose={() => setOfferPlayer(null)}
@@ -10142,12 +10318,14 @@ function rivalClauseDetails(player: InitialSquadPlayer) {
   };
 }
 
-function RivalOfferDialog({ player, rival, budget, matchdayStartAt, existingOffer, onClausePurchase, onClose, onSave }: { player: InitialSquadPlayer; rival: RivalTeam; budget: number; matchdayStartAt: number; existingOffer?: SentOffer; onClausePurchase: (clause: number, blind: boolean) => string | null; onClose: () => void; onSave: (amount: number) => string | null }) {
+function RivalOfferDialog({ player, rival, budget, matchdayStartAt, backendContract, clauseCutoffAt, existingOffer, onClausePurchase, onClose, onSave }: { player: InitialSquadPlayer; rival: RivalTeam; budget: number; matchdayStartAt: number; backendContract?: NexoPlayerContract; clauseCutoffAt?: string; existingOffer?: SentOffer; onClausePurchase: (clause: number, blind: boolean) => Promise<string | null> | string | null; onClose: () => void; onSave: (amount: number) => string | null }) {
   const [amount, setAmount] = useState((existingOffer?.amount ?? player.value).toFixed(1));
   const [error, setError] = useState("");
   const [confirmClause, setConfirmClause] = useState(false);
-  const contract = rivalClauseDetails(player);
-  const clauseDeadline = matchdayStartAt - 24 * 60 * 60 * 1000;
+  const [clauseBusy, setClauseBusy] = useState(false);
+  const fallbackContract = rivalClauseDetails(player);
+  const contract = { clause: backendContract?.clause ?? fallbackContract.clause, blind: backendContract ? Boolean(backendContract.blindUntil && Date.parse(backendContract.blindUntil) > Date.now()) : fallbackContract.blind };
+  const clauseDeadline = clauseCutoffAt ? Date.parse(clauseCutoffAt) : matchdayStartAt - 24 * 60 * 60 * 1000;
   const clauseWindowOpen = Date.now() < clauseDeadline;
   const canAffordClause = budget >= contract.clause;
 
@@ -10162,13 +10340,11 @@ function RivalOfferDialog({ player, rival, budget, matchdayStartAt, existingOffe
     if (result) setError(result);
   }
 
-  function purchaseClause() {
-    const result = onClausePurchase(contract.clause, contract.blind);
-    if (result) {
-      setError(result);
-      setConfirmClause(false);
-      return;
-    }
+  async function purchaseClause() {
+    setClauseBusy(true);
+    const result = await onClausePurchase(contract.clause, contract.blind);
+    setClauseBusy(false);
+    if (result) { setError(result); setConfirmClause(false); return; }
     onClose();
   }
 
@@ -10228,7 +10404,7 @@ function RivalOfferDialog({ player, rival, budget, matchdayStartAt, existingOffe
             </p>
             <div>
               <button onClick={() => setConfirmClause(false)}>Cancelar</button>
-              <button onClick={purchaseClause}>Confirmar clausulazo</button>
+              <button onClick={() => void purchaseClause()} disabled={clauseBusy}>{clauseBusy ? "Comprobando…" : "Confirmar clausulazo"}</button>
             </div>
           </div>
         )}

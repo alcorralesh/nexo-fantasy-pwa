@@ -36,7 +36,7 @@ export type NexoLeagueMarket = {
 
 export type NexoMarketHistoryEntry = {
   id: string;
-  eventType: "bid" | "transfer";
+  eventType: "bid" | "offer" | "transfer" | "clause" | "clause_raise" | "blindage" | "sale";
   direction: "made" | "received" | "system";
   title: string;
   detail: string;
@@ -48,7 +48,7 @@ export type NexoMarketHistoryEntry = {
 
 export type NexoLeagueActivityEntry = {
   id: string;
-  activityType: "transfer" | "market" | "membership";
+  activityType: "transfer" | "market" | "membership" | "clause" | "clause_raise" | "blindage" | "sale";
   actor: string;
   initials: string;
   title: string;

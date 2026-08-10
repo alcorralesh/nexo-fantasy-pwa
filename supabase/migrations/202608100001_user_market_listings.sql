@@ -202,6 +202,7 @@ begin
   select * into listing from public.league_user_market_listings where id=offer.listing_id and status='active' for update;
   if not found then raise exception 'El anuncio ya no esta activo'; end if;
   perform pg_advisory_xact_lock(hashtextextended(listing.league_id || ':user-market',0));
+  perform pg_advisory_xact_lock(hashtextextended(listing.league_id || ':ownership:' || listing.player_id,0));
   select * into seller from public.league_memberships where id=listing.seller_membership_id and user_id=auth.uid() and left_at is null for update;
   if not found then raise exception 'No puedes responder esta oferta'; end if;
   if not accept_offer then
