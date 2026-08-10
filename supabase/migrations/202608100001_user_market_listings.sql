@@ -99,7 +99,7 @@ $$;
 create or replace function public.list_my_roster_player(target_league_id text, target_player_id text, target_asking_price numeric)
 returns uuid language plpgsql security definer set search_path = public as $$
 declare mine public.league_memberships; roster public.league_rosters; owned public.league_roster_players;
-  player public.players; existing_id uuid; result_id uuid;
+  player public.players; existing_listing public.league_user_market_listings; result_id uuid;
 begin
   perform pg_advisory_xact_lock(hashtextextended(target_league_id || ':user-market',0));
   select * into mine from public.league_memberships where league_id=target_league_id and user_id=auth.uid() and left_at is null for update;
@@ -111,11 +111,19 @@ begin
   if owned.is_starter then raise exception 'Mueve al jugador al banquillo antes de publicarlo'; end if;
   select * into player from public.players where id=target_player_id;
   if target_asking_price < player.market_value then raise exception 'El precio minimo es el valor de mercado actual'; end if;
-  select id into existing_id from public.league_user_market_listings
+  select * into existing_listing from public.league_user_market_listings
    where league_id=target_league_id and player_id=target_player_id and status='active' for update;
-  if existing_id is not null then
-    update public.league_user_market_listings set asking_price=target_asking_price, updated_at=now() where id=existing_id;
-    return existing_id;
+  if existing_listing.id is not null then
+    if existing_listing.seller_membership_id<>mine.id or existing_listing.roster_id<>roster.id then
+      raise exception 'El anuncio pertenece a otra plantilla';
+    end if;
+    if existing_listing.asking_price is distinct from target_asking_price then
+      update public.league_user_market_offers
+         set status='rejected',resolved_at=now(),updated_at=now()
+       where listing_id=existing_listing.id and status='active';
+    end if;
+    update public.league_user_market_listings set asking_price=target_asking_price, updated_at=now() where id=existing_listing.id;
+    return existing_listing.id;
   end if;
   insert into public.league_user_market_listings(league_id,seller_membership_id,roster_id,player_id,asking_price)
   values(target_league_id,mine.id,roster.id,target_player_id,target_asking_price) returning id into result_id;

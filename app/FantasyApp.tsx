@@ -7271,6 +7271,7 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
       setMarketError(`El precio mínimo es ${player.value.toFixed(1).replace(".", ",")} M`);
       return;
     }
+    const priceChanged = Boolean(backendListing && Math.abs(backendListing.askingPrice - amount) > 0.001);
     setMarketBusy(true);
     setMarketError("");
     try {
@@ -7279,7 +7280,7 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
       await onRefreshBackendMarket();
       window.dispatchEvent(new CustomEvent("nexo-user-market-updated"));
       setPanel("overview");
-      notify(backendListing ? `Precio de ${player.name} actualizado` : `${player.name} ya está visible para todos los usuarios de la liga`);
+      notify(backendListing ? (priceChanged ? `Precio de ${player.name} actualizado · ofertas activas rechazadas` : `El anuncio de ${player.name} no ha cambiado`) : `${player.name} ya está visible para todos los usuarios de la liga`);
     } catch (error) {
       setMarketError(error instanceof Error ? error.message : "No se pudo publicar el jugador");
     } finally {
@@ -7450,7 +7451,7 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
                 </div>
                 <small>Mínimo: {player.value.toFixed(1).replace(".", ",")} M · valor de mercado actual</small>
               </label>
-              <p className="bid-privacy-note">{backendListing ? "El nuevo mínimo se aplicará a las ofertas futuras. Las ofertas válidas que ya recibiste conservarán su importe y vigencia." : "El anuncio no desaparece en las renovaciones normales del mercado. Permanecerá hasta que vendas al jugador o lo retires."}</p>
+              <p className="bid-privacy-note">{backendListing ? "Al guardar un precio distinto se rechazarán automáticamente todas las ofertas activas. Las nuevas propuestas se validarán contra el importe actualizado en el backend." : "El anuncio no desaparece en las renovaciones normales del mercado. Permanecerá hasta que vendas al jugador o lo retires."}</p>
               {marketError && <p className="form-error" role="alert">{marketError}</p>}
               <div className="dialog-actions">
                 <button type="button" className="secondary-button" onClick={() => setPanel("overview")}>Cancelar</button>
