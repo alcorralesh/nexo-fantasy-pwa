@@ -56,6 +56,49 @@ export type NexoLeagueActivityEntry = {
   occurredAt: string;
 };
 
+export type NexoUserMarketListing = {
+  listingId: string;
+  playerId: string;
+  name: string;
+  initials: string;
+  position: PlayerPosition;
+  club: string;
+  marketValue: number;
+  askingPrice: number;
+  sellerMembershipId: string;
+  sellerTeamName: string;
+  sellerName: string;
+  photoUrl?: string;
+  listedAt: string;
+  mine: boolean;
+};
+
+export type NexoUserMarketOffer = {
+  offerId: string;
+  listingId: string;
+  playerId: string;
+  amount: number;
+  status: "active" | "accepted" | "rejected" | "cancelled" | "expired";
+  createdAt: string;
+  expiresAt: string;
+  resolvedAt?: string;
+  bidderMembershipId?: string;
+  bidderTeamName?: string;
+  bidderName?: string;
+  bidderInitials?: string;
+  playerName?: string;
+  sellerMembershipId?: string;
+  sellerTeamName?: string;
+};
+
+export type NexoLeagueUserMarket = {
+  leagueId: string;
+  membershipId: string;
+  listings: NexoUserMarketListing[];
+  receivedOffers: NexoUserMarketOffer[];
+  sentOffers: NexoUserMarketOffer[];
+};
+
 function requireClient() {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase todavía no está configurado.");
@@ -96,6 +139,46 @@ export async function loadNexoLeagueActivity(leagueId: string): Promise<NexoLeag
     detail: String(row.detail),
     occurredAt: String(row.occurred_at),
   }));
+}
+
+export async function loadNexoLeagueUserMarket(leagueId: string): Promise<NexoLeagueUserMarket> {
+  const { data, error } = await requireClient().rpc("my_league_user_market", { target_league_id: leagueId });
+  if (error) throw new Error(error.message);
+  const row = data as Record<string, unknown>;
+  return {
+    leagueId: String(row.leagueId),
+    membershipId: String(row.membershipId),
+    listings: ((row.listings ?? []) as Record<string, unknown>[]).map(mapUserListing),
+    receivedOffers: ((row.receivedOffers ?? []) as Record<string, unknown>[]).map(mapUserOffer),
+    sentOffers: ((row.sentOffers ?? []) as Record<string, unknown>[]).map(mapUserOffer),
+  };
+}
+
+export async function listNexoRosterPlayer(leagueId: string, playerId: string, askingPrice: number): Promise<string> {
+  const { data, error } = await requireClient().rpc("list_my_roster_player", { target_league_id: leagueId, target_player_id: playerId, target_asking_price: askingPrice });
+  if (error) throw new Error(error.message);
+  return String(data);
+}
+
+export async function withdrawNexoUserListing(listingId: string): Promise<void> {
+  const { error } = await requireClient().rpc("withdraw_my_user_listing", { target_listing_id: listingId });
+  if (error) throw new Error(error.message);
+}
+
+export async function placeNexoUserMarketOffer(listingId: string, amount: number): Promise<string> {
+  const { data, error } = await requireClient().rpc("place_my_user_market_offer", { target_listing_id: listingId, target_amount: amount });
+  if (error) throw new Error(error.message);
+  return String(data);
+}
+
+export async function cancelNexoUserMarketOffer(offerId: string): Promise<void> {
+  const { error } = await requireClient().rpc("cancel_my_user_market_offer", { target_offer_id: offerId });
+  if (error) throw new Error(error.message);
+}
+
+export async function respondNexoUserMarketOffer(offerId: string, accept: boolean): Promise<void> {
+  const { error } = await requireClient().rpc("respond_to_my_user_market_offer", { target_offer_id: offerId, accept_offer: accept });
+  if (error) throw new Error(error.message);
 }
 
 export async function placeNexoMarketBid(listingId: string, amount: number): Promise<NexoMarketBid> {
@@ -158,5 +241,29 @@ function mapMarket(row: Record<string, unknown>): NexoLeagueMarket {
       amount: Number(bid.amount),
       placedAt: String(bid.placedAt),
     })),
+  };
+}
+
+function mapUserListing(row: Record<string, unknown>): NexoUserMarketListing {
+  return {
+    listingId: String(row.listingId), playerId: String(row.playerId), name: String(row.name), initials: String(row.initials),
+    position: row.position as PlayerPosition, club: String(row.club), marketValue: Number(row.marketValue), askingPrice: Number(row.askingPrice),
+    sellerMembershipId: String(row.sellerMembershipId), sellerTeamName: String(row.sellerTeamName), sellerName: String(row.sellerName),
+    photoUrl: row.photoUrl ? String(row.photoUrl) : undefined, listedAt: String(row.listedAt), mine: Boolean(row.mine),
+  };
+}
+
+function mapUserOffer(row: Record<string, unknown>): NexoUserMarketOffer {
+  return {
+    offerId: String(row.offerId), listingId: String(row.listingId), playerId: String(row.playerId), amount: Number(row.amount),
+    status: row.status as NexoUserMarketOffer["status"], createdAt: String(row.createdAt), expiresAt: String(row.expiresAt),
+    resolvedAt: row.resolvedAt ? String(row.resolvedAt) : undefined,
+    bidderMembershipId: row.bidderMembershipId ? String(row.bidderMembershipId) : undefined,
+    bidderTeamName: row.bidderTeamName ? String(row.bidderTeamName) : undefined,
+    bidderName: row.bidderName ? String(row.bidderName) : undefined,
+    bidderInitials: row.bidderInitials ? String(row.bidderInitials) : undefined,
+    playerName: row.playerName ? String(row.playerName) : undefined,
+    sellerMembershipId: row.sellerMembershipId ? String(row.sellerMembershipId) : undefined,
+    sellerTeamName: row.sellerTeamName ? String(row.sellerTeamName) : undefined,
   };
 }
