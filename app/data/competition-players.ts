@@ -4,6 +4,7 @@ export interface CompetitionPlayer extends InitialSquadPlayer {
   competition: CompetitionName;
   club: string;
   catalogVersion: string;
+  active?: boolean;
 }
 
 type Seed = [name: string, position: PlayerPosition, club: string, value: number];

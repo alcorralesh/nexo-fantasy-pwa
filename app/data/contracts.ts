@@ -61,6 +61,7 @@ export interface InitialSquadPlayer {
   value: number;
   club?: string;
   photoUrl?: string;
+  availabilityStatus?: "active" | "out_of_competition" | "changed_competition";
 }
 
 export interface InitialSquad {
@@ -83,6 +84,7 @@ export interface MarketPlayer {
   price: number;
   trend: string;
   photoUrl?: string;
+  availabilityStatus?: "active" | "out_of_competition";
 }
 
 export interface LineupPlayer {

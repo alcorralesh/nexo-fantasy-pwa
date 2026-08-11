@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type Position = "POR" | "DEF" | "MED" | "DEL";
 type Player = { provider_id: string; competition_id: string; player_name: string; position: Position; club_name: string; market_value: number; photo_url: string | null; source_name: string };
-type ExistingPlayer = { provider_id: string; name: string; position: Position; active: boolean; photo_url: string | null; sports_clubs: { name: string } | Array<{ name: string }> | null };
+type ExistingPlayer = { provider_id: string; competition_id: string; name: string; position: Position; active: boolean; photo_url: string | null; sports_clubs: { name: string } | Array<{ name: string }> | null };
 
 const allowedOrigins = new Set(["https://alcorralesh.github.io", "http://localhost:3000"]);
 const season = "2026";
@@ -28,10 +28,25 @@ function stableValue(id: string, position: Position) { const base = { POR: 5.8, 
 async function getText(url: string) { const response = await fetch(url, { headers: { "user-agent": "NexoFantasyCatalog/1.0" } }); if (!response.ok) throw new Error(`${response.status} al consultar la fuente oficial`); return response.text(); }
 async function mapLimit<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>) { const output = new Array<R>(items.length); let cursor = 0; async function next() { while (cursor < items.length) { const index = cursor++; output[index] = await worker(items[index]); } } await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next)); return output; }
 
+function laligaRuntime(html: string) {
+  const nextData = html.match(/<script[^>]+id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i)?.[1]
+    ?? html.match(/<script[^>]*>(\{"props"[\s\S]*?"scriptLoader":\[\]\})<\/script>/i)?.[1];
+  if (nextData) {
+    try {
+      const parsed = JSON.parse(nextData.replace(/&quot;/g, '"'));
+      if (parsed.runtimeConfig?.backendUrl && parsed.runtimeConfig?.backendSubscription) return parsed.runtimeConfig;
+    } catch { /* La expresion regular de respaldo cubre HTML parcialmente escapado. */ }
+  }
+  const backendUrl = html.match(/(?:\\?"|&quot;)backendUrl(?:\\?"|&quot;):(?:\\?"|&quot;)(https?:[^"&\\]+)(?:\\?"|&quot;)/)?.[1];
+  const backendSubscription = html.match(/(?:\\?"|&quot;)backendSubscription(?:\\?"|&quot;):(?:\\?"|&quot;)([^"&\\]+)(?:\\?"|&quot;)/)?.[1];
+  return { backendUrl, backendSubscription };
+}
+
 async function loadLaliga(): Promise<Player[]> {
   const bootstrap = await getText("https://www.laliga.com/clubes/athletic-club/plantilla");
-  const backendUrl = bootstrap.match(/"backendUrl":"([^"]+)"/)?.[1];
-  const subscription = bootstrap.match(/"backendSubscription":"([^"]+)"/)?.[1];
+  const runtime = laligaRuntime(bootstrap);
+  const backendUrl = runtime.backendUrl;
+  const subscription = runtime.backendSubscription;
   if (!backendUrl || !subscription) throw new Error("No se pudo localizar el servicio público de LALIGA");
   const players: Player[] = [];
   for (const competition of competitionPages) {
@@ -71,11 +86,11 @@ async function loadLigaF(): Promise<Player[]> {
 
 function summarize(players: Player[], existing: ExistingPlayer[]) {
   const current = new Map(existing.map((row) => [row.provider_id, row])); const incoming = new Map(players.map((player) => [player.provider_id, player]));
-  let additions = 0, updates = 0, deactivations = 0;
-  for (const player of players) { const row = current.get(player.provider_id); if (!row) additions++; else { const club = Array.isArray(row.sports_clubs) ? row.sports_clubs[0]?.name : row.sports_clubs?.name; if (!row.active || row.name !== player.player_name || row.position !== player.position || club !== player.club_name || (row.photo_url ?? null) !== player.photo_url) updates++; } }
+  let additions = 0, updates = 0, deactivations = 0, reactivations = 0, competitionChanges = 0, clubChanges = 0, positionChanges = 0;
+  for (const player of players) { const row = current.get(player.provider_id); if (!row) additions++; else { const club = Array.isArray(row.sports_clubs) ? row.sports_clubs[0]?.name : row.sports_clubs?.name; if (!row.active) reactivations++; if (row.competition_id !== player.competition_id) competitionChanges++; else if (club !== player.club_name) clubChanges++; if (row.position !== player.position) positionChanges++; if (!row.active || row.competition_id !== player.competition_id || row.name !== player.player_name || row.position !== player.position || club !== player.club_name || (row.photo_url ?? null) !== player.photo_url) updates++; } }
   for (const row of existing) if (row.active && !incoming.has(row.provider_id)) deactivations++;
   const competitions = Object.fromEntries(["primera", "segunda", "liga_f"].map((id) => [id, players.filter((player) => player.competition_id === id).length]));
-  return { additions, updates, deactivations, unchanged: players.length - additions - updates, total: players.length, competitions };
+  return { additions, updates, deactivations, reactivations, competitionChanges, clubChanges, positionChanges, unchanged: players.length - additions - updates, total: players.length, competitions };
 }
 
 Deno.serve(async (request) => {
@@ -98,7 +113,7 @@ Deno.serve(async (request) => {
     jobId = job.id;
     const [laliga, ligaF] = await Promise.all([loadLaliga(), loadLigaF()]);
     const players = [...new Map([...laliga, ...ligaF].map((player) => [player.provider_id, player])).values()];
-    const { data: existing, error: existingError } = await admin.from("players").select("provider_id,name,position,active,photo_url,sports_clubs(name)").or("provider_id.like.laliga:%,provider_id.like.ligaf:%");
+    const { data: existing, error: existingError } = await admin.from("players").select("provider_id,competition_id,name,position,active,photo_url,sports_clubs(name)").or("provider_id.like.laliga:%,provider_id.like.ligaf:%");
     if (existingError) throw existingError;
     const summary = summarize(players, (existing ?? []) as ExistingPlayer[]); const catalogVersion = new Date().toISOString().slice(0, 10);
     if (mode === "apply") {

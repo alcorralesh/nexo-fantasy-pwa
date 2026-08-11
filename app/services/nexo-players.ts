@@ -10,9 +10,21 @@ export type CatalogSyncSummary = {
   additions: number;
   updates: number;
   deactivations: number;
+  reactivations?: number;
+  competitionChanges?: number;
+  clubChanges?: number;
+  positionChanges?: number;
   unchanged: number;
   total: number;
   competitions: Record<"primera" | "segunda" | "liga_f", number>;
+  reconciliation?: {
+    systemListingsCancelled: number;
+    systemBidsCancelled: number;
+    userListingsCancelled: number;
+    userOffersCancelled: number;
+    directOffersCancelled: number;
+    lineupsRequiringReview: number;
+  };
 };
 
 export type CatalogSyncResult = { jobId: string; mode: "preview" | "apply"; catalogVersion: string; summary: CatalogSyncSummary };
@@ -66,7 +78,27 @@ export async function loadNexoPlayerCatalog(): Promise<Record<CompetitionName, C
   return catalog;
 }
 
-export async function updateNexoPlayer(player: CompetitionPlayer, active = true): Promise<void> {
+export async function loadNexoAdminPlayerCatalog(): Promise<Record<CompetitionName, CompetitionPlayer[]>> {
+  const client = requireClient();
+  type CatalogRow={id:string;competition_id:string;name:string;initials:string;position:CompetitionPlayer["position"];market_value:number|string;catalog_version:string;photo_url:string|null;active:boolean;sports_clubs:{name:string}|null};
+  const rows: CatalogRow[] = [];
+  const pageSize = 1000;
+  for (let from = 0;; from += pageSize) {
+    const { data, error } = await client.from("players").select("id,competition_id,name,initials,position,market_value,catalog_version,photo_url,active,sports_clubs(name)").order("name").range(from, from + pageSize - 1);
+    if (error) throw error;
+    const page = (data ?? []) as unknown as CatalogRow[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+  }
+  const catalog: Record<CompetitionName, CompetitionPlayer[]> = { Primera: [], Segunda: [], "Liga F": [] };
+  for (const row of rows) {
+    const competition = competitionNames[row.competition_id] ?? "Primera";
+    catalog[competition].push({ id:row.id,name:row.name,initials:row.initials,position:row.position,value:Number(row.market_value),club:row.sports_clubs?.name ?? "Sin club",competition,catalogVersion:row.catalog_version,photoUrl:row.photo_url ?? undefined,active:row.active });
+  }
+  return catalog;
+}
+
+export async function updateNexoPlayer(player: CompetitionPlayer, active = player.active ?? true): Promise<void> {
   const client = requireClient();
   const { error } = await client.rpc("update_player_catalog_entry", {
     target_player_id: player.id,
@@ -74,6 +106,9 @@ export async function updateNexoPlayer(player: CompetitionPlayer, active = true)
     new_position: player.position,
     new_market_value: player.value,
     new_active: active,
+    new_competition_id: player.competition === "Primera" ? "primera" : player.competition === "Segunda" ? "segunda" : "liga_f",
+    new_club_name: player.club,
+    new_photo_url: player.photoUrl ?? null,
   });
   if (error) throw new Error(error.message);
   if (typeof window !== "undefined") window.localStorage.removeItem(catalogCacheKey);

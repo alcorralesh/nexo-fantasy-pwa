@@ -11,11 +11,11 @@ import { calculatePlayerPoints, defaultScoringRules, demoPlayerMatchStats, type 
 import { createDemoAllocationGateway } from "./services/initial-squad-allocation";
 import { acceptNexoLegalDocuments, completeNexoOnboarding, createNexoTeam, loadNexoIdentity, registerInNexo, sendNexoPasswordReset, signInToNexo, signOutFromNexo, type NexoIdentity, type NexoRegistration } from "./services/nexo-auth";
 import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLeagueJoin, createNexoPrivateLeague, leaveNexoLeague, loadNexoLeagueState, previewNexoPrivateLeague, regenerateNexoPrivateLeagueCode, reserveNexoLeaguePlace, updateNexoPrivateLeague, type NexoLeagueRankingRow } from "./services/nexo-leagues";
-import { cancelNexoMarketBid, cancelNexoUserMarketOffer, forceNexoMarketRenewal, listNexoRosterPlayer, loadNexoLeagueActivity, loadNexoLeagueMarket, loadNexoLeagueMarketHistory, loadNexoLeagueUserMarket, placeNexoMarketBid, placeNexoUserMarketOffer, respondNexoUserMarketOffer, withdrawNexoUserListing, type NexoLeagueActivityEntry, type NexoLeagueMarket, type NexoLeagueUserMarket, type NexoMarketHistoryEntry, type NexoUserMarketListing, type NexoUserMarketOffer } from "./services/nexo-market";
-import { loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, loadNexoPlayerMatchdayPoints, runNexoPlayerCatalogSync, updateNexoPlayer, type CatalogSyncJob, type CatalogSyncResult } from "./services/nexo-players";
+import { cancelNexoMarketBid, cancelNexoUserMarketOffer, forceNexoMarketRenewal, listNexoRosterPlayer, loadNexoLeagueActivity, loadNexoLeagueMarket, loadNexoLeagueMarketHistory, loadNexoLeagueUserMarket, placeNexoDirectPlayerOffer, placeNexoMarketBid, placeNexoUserMarketOffer, respondNexoUserMarketOffer, withdrawNexoUserListing, type NexoLeagueActivityEntry, type NexoLeagueMarket, type NexoLeagueUserMarket, type NexoMarketHistoryEntry, type NexoUserMarketListing, type NexoUserMarketOffer } from "./services/nexo-market";
+import { loadNexoAdminPlayerCatalog, loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, loadNexoPlayerMatchdayPoints, runNexoPlayerCatalogSync, updateNexoPlayer, type CatalogSyncJob, type CatalogSyncResult } from "./services/nexo-players";
 import { loadNexoCalendarSyncHistory, loadNexoMatchCalendar, runNexoCalendarSync, type CalendarSyncJob, type CalendarSyncResult, type MatchFixture } from "./services/nexo-calendar";
 import { deleteNexoMatchdaySimulation, loadNexoMatchdayHistory, loadNexoMatchdayLifecycleConfig, loadNexoMatchdayLineups, loadNexoMatchdayStates, saveNexoMatchdayLifecycleConfig, saveNexoMatchdayLineup, simulateNexoMatchdayClose, type NexoMatchdayHistory, type NexoMatchdaySimulation, type NexoMatchdayState, type NexoSimulationScenario } from "./services/nexo-matchdays";
-import { createNexoChallenge, loadNexoChallenges, snapshotNexoChallenge } from "./services/nexo-challenges";
+import { createNexoChallenge, loadNexoChallenges, snapshotNexoChallenge, updateNexoChallenge } from "./services/nexo-challenges";
 import { buyNexoPlayerClause, loadNexoLeagueContracts, raiseNexoPlayerClause, sellNexoPlayerImmediately, setNexoPlayerBlindage, type NexoLeagueContracts, type NexoPlayerContract } from "./services/nexo-contracts";
 import { loadNexoNotifications, markAllNexoNotificationsRead, markNexoNotificationRead } from "./services/nexo-notifications";
 import { loadNexoCareerTrends, loadNexoClubActivity, loadNexoCompetitionTrends, type NexoCareerTrend, type NexoClubActivity } from "./services/nexo-dashboard";
@@ -2218,6 +2218,25 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     notify("Jornada anterior cerrada · precios y presupuesto congelados");
   }
 
+  async function updateFantasyEvent(eventId: string, event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) {
+    if (sessionUser?.id !== "demo_user") {
+      await updateNexoChallenge(eventId, {
+        name: event.name,
+        description: event.description,
+        fixtureIds: event.fixtures.map((fixture) => fixture.id),
+        lineupPolicy: event.lineupPolicy,
+        maxPlayersPerClub: event.maxPlayersPerClub,
+        capacity: event.capacity,
+        featured: event.featured,
+        budgetPercentile: event.budgetPercentile,
+      });
+      await Promise.all([refreshBackendChallenges(), refreshBackendLeagues()]);
+    } else {
+      setFantasyEvents((current) => current.map((item) => item.id === eventId ? { ...item, ...event } : event.featured && item.competition === event.competition ? { ...item, featured: false } : item));
+    }
+    notify("Cambios del reto guardados");
+  }
+
   function submitLeagueReport(leagueId: string, rival: RivalTeam, category: ReportCategory, details: string) {
     const duplicate = leagueReports.some((report) => report.leagueId === leagueId && report.reportedUserId === rival.id && report.status === "pending");
     if (duplicate) return "Ya tienes una denuncia pendiente sobre este usuario en la liga.";
@@ -3346,13 +3365,15 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
               onCatalogSyncApplied={refreshBackendPlayerCatalog}
               onSavePlayer={async (player) => {
                 if (sessionUser.id !== "demo_user") await updateNexoPlayer(player);
-                setAdminPlayerCatalog((current) => ({
-                  ...current,
-                  [player.competition]: current[player.competition].map((item) => (item.id === player.id ? player : item)),
-                }));
+                setAdminPlayerCatalog((current) => {
+                  const next = Object.fromEntries(Object.entries(current).map(([competition, items]) => [competition, items.filter((item) => item.id !== player.id)])) as Record<CompetitionName, CompetitionPlayer[]>;
+                  if (player.active !== false) next[player.competition] = [...next[player.competition], player].sort((a,b)=>a.name.localeCompare(b.name,"es"));
+                  return next;
+                });
               }}
               fantasyEvents={fantasyEvents}
               onCreateFantasyEvent={createFantasyEvent}
+              onUpdateFantasyEvent={updateFantasyEvent}
               onSnapshotFantasyEvent={snapshotFantasyEvent}
               onOpenLeague={openLeague}
               onRenewMarket={renewLeagueMarketAsAdmin}
@@ -7653,9 +7674,13 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
   const trend = getCompetitionTrends(competition).find((item) => item.id === player.id);
   const blindActive = Boolean(contract.blindUntil && contract.blindUntil > Date.now());
   const immediateSalePercent = backendContracts?.rules.immediateSalePercent ?? 50;
+  const backendPlayerContract = backendContracts?.contracts.find((item) => item.playerId === player.id && item.mine);
+  const availabilityStatus = backendPlayerContract?.availabilityStatus ?? player.availabilityStatus ?? "active";
+  const unavailable = availabilityStatus !== "active";
+  const salePercent = unavailable ? (backendContracts?.rules.realExitSalePercent ?? 100) : immediateSalePercent;
   const blindageDurationHours = backendContracts?.rules.blindageDurationHours ?? 24;
   const clauseRaiseCostPercent = backendContracts?.rules.clauseRaiseCostPercent ?? 10;
-  const immediateValue = Number((player.value * immediateSalePercent / 100).toFixed(2));
+  const immediateValue = Number((player.value * salePercent / 100).toFixed(2));
   const backendListing = backendMarket?.listings.find((listing) => listing.mine && listing.playerId === player.id);
   const isListed = backendEnabled ? Boolean(backendListing) : contract.listed;
   const backendPlayerOffers: PlayerOffer[] = (backendMarket?.receivedOffers ?? []).filter((offer) => offer.playerId === player.id).map((offer) => ({ id: offer.offerId, source: "rival", bidderName: offer.bidderName ?? offer.bidderTeamName ?? "Usuario rival", bidderInitials: offer.bidderInitials ?? "R", amount: offer.amount, status: offer.status, createdAt: Date.parse(offer.createdAt), expiresAt: Date.parse(offer.expiresAt) }));
@@ -7794,7 +7819,7 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
         const result = await sellNexoPlayerImmediately(leagueId, player.id);
         await Promise.all([onRefreshBackendContracts(), onRefreshBackendMarket()]);
         window.dispatchEvent(new CustomEvent("nexo-user-market-updated"));
-        notify(`${player.name} vendido por ${result.amount.toFixed(1).replace(".", ",")} M`);
+        notify(result.protectedExit ? `${player.name} liquidado por salida de la competición · ${result.amount.toFixed(1).replace(".", ",")} M recuperados` : `${player.name} vendido por ${result.amount.toFixed(1).replace(".", ",")} M`);
         onClose();
       } else onImmediateSale();
     } catch (error) { notify(error instanceof Error ? error.message : "No se pudo vender al jugador"); }
@@ -7828,6 +7853,7 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
           <div className="player-sheet-identity">
             <span className="position-chip">{player.position}</span>
             <span className="bench-chip">BANQUILLO</span>
+            {unavailable && <span className="player-exit-chip">FUERA DE LA COMPETICIÓN</span>}
             <p>{player.club}</p>
             <h2 id="bench-player-title">{player.name}</h2>
             <div className="player-market-value">
@@ -7840,6 +7866,15 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
 
         {panel === "overview" && (
           <>
+            {unavailable && (
+              <article className="player-real-exit-alert">
+                <span>!</span>
+                <div>
+                  <strong>Ya no participa en esta competición</strong>
+                  <p>No puede alinearse, ponerse en el mercado ni recibir ofertas. Sigue siendo tuyo hasta que solicites la liquidación protegida.</p>
+                </div>
+              </article>
+            )}
             <section className="contract-summary">
               <article>
                 <small>CLÁUSULA</small>
@@ -7848,8 +7883,8 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
               </article>
               <article>
                 <small>ESTADO</small>
-                <strong>{blindActive ? "Blindado" : isListed ? "En venta" : "Disponible"}</strong>
-                <span>{contract.untouchable ? "Marcado intocable" : "Sin restricciones"}</span>
+                <strong>{unavailable ? "Fuera de competición" : blindActive ? "Blindado" : isListed ? "En venta" : "Disponible"}</strong>
+                <span>{unavailable ? "Pendiente de tu decisión" : contract.untouchable ? "Marcado intocable" : "Sin restricciones"}</span>
               </article>
               <article>
                 <small>OFERTAS VÁLIDAS</small>
@@ -7866,7 +7901,7 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
                 </div>
               </article>
             )}
-            {exclusiveMarket && (
+            {exclusiveMarket && !unavailable && (
               <section className="management-action-grid">
                 <button onClick={() => setPanel("clause")}>
                   <span>↑</span>
@@ -7897,6 +7932,16 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
                   </div>
                 </button>
               </section>
+            )}
+            {exclusiveMarket && unavailable && (
+              <button className="protected-exit-action" onClick={() => setPanel("sell")}>
+                <span>€</span>
+                <div>
+                  <strong>Solicitar liquidación protegida</strong>
+                  <small>Recuperas {immediateValue.toFixed(1).replace(".", ",")} M · nunca se ejecuta automáticamente</small>
+                </div>
+                <b>Continuar →</b>
+              </button>
             )}
             <section className="secondary-management-actions">
               <button
@@ -8041,12 +8086,13 @@ function BenchPlayerManagementSheet({ player, leagueId, competition, exclusiveMa
               ‹ Volver
             </button>
             <span>!</span>
-            <h3>¿Vender inmediatamente?</h3>
+            <h3>{unavailable ? "¿Solicitar la liquidación protegida?" : "¿Vender inmediatamente?"}</h3>
             <p>
-              Recibirás el {immediateSalePercent}% de su valor: <strong>{immediateValue.toFixed(1).replace(".", ",")} M</strong>. El jugador abandonará tu banquillo y la operación no se puede deshacer.
+              {unavailable ? "Esta operación es voluntaria y nunca se ejecuta sola. " : `Recibirás el ${immediateSalePercent}% de su valor. `}
+              Recuperarás <strong>{immediateValue.toFixed(1).replace(".", ",")} M</strong>. El jugador abandonará tu plantilla y la operación no se puede deshacer.
             </p>
-            <button className="danger-confirm" onClick={() => void sellImmediately()} disabled={marketBusy || (backendEnabled && !backendContracts?.rules.immediateSaleEnabled)}>
-              Confirmar venta por {immediateValue.toFixed(1).replace(".", ",")} M
+            <button className="danger-confirm" onClick={() => void sellImmediately()} disabled={marketBusy || (!unavailable && backendEnabled && !backendContracts?.rules.immediateSaleEnabled)}>
+              {unavailable ? "Liquidar" : "Confirmar venta por"} {immediateValue.toFixed(1).replace(".", ",")} M
             </button>
           </section>
         )}
@@ -8533,6 +8579,7 @@ function LeagueMarketView({ league, players, squad, budget, rules, backendEnable
     price: listing.price,
     trend: "En mercado",
     photoUrl: listing.photoUrl,
+    availabilityStatus: listing.availabilityStatus,
   }));
   const userMarketPlayers: MarketPlayer[] = (userMarket?.listings ?? []).map((listing) => ({
     id: listing.playerId,
@@ -8669,6 +8716,7 @@ function LeagueMarketView({ league, players, squad, budget, rules, backendEnable
     : localMarketHistory;
 
   async function saveBid(player: MarketPlayer, amount: number): Promise<string | null> {
+    if (player.availabilityStatus === "out_of_competition") return "Este jugador ha salido de la competición y ya no admite pujas";
     const existing = bids.find((bid) => bid.playerId === player.id);
     const otherCommitted = committed - (existing?.amount ?? 0);
     if (amount < player.price) return `La puja mínima es ${player.price.toFixed(1).replace(".", ",")} M`;
@@ -8976,14 +9024,16 @@ function LeagueMarketView({ league, players, squad, budget, rules, backendEnable
           {visiblePlayers.map((player) => {
             const bid = bids.find((item) => item.playerId === player.id);
             const userListing = userMarket?.listings.find((item) => item.playerId === player.id);
+            const unavailable = player.availabilityStatus === "out_of_competition";
             return (
-              <article className={`market-player ${userListing ? "user-listing" : ""}`} key={`${userListing ? "user" : "game"}_${player.id}`}>
+              <article className={`market-player ${userListing ? "user-listing" : ""} ${unavailable ? "unavailable" : ""}`} key={`${userListing ? "user" : "game"}_${player.id}`}>
                 <Avatar label={player.initials} />
                 <div className="player-identity">
                   <strong>{player.name}</strong>
                   <small>
                     <b>{player.position}</b> {player.club}
                   </small>
+                  {unavailable && <em className="market-unavailable-label">FUERA DE LA COMPETICIÓN</em>}
                 </div>
                 <div className="market-points">
                   <strong>{player.points}</strong>
@@ -8991,10 +9041,10 @@ function LeagueMarketView({ league, players, squad, budget, rules, backendEnable
                 </div>
                 <div className="market-price">
                   <strong>{player.price.toFixed(1).replace(".", ",")} M</strong>
-                  <small>{userListing ? (userListing.mine ? "Tu anuncio" : `Vende ${userListing.sellerTeamName}`) : bid ? `Tu puja: ${bid.amount.toFixed(1).replace(".", ",")} M` : player.trend}</small>
+                  <small>{unavailable ? "Pujas canceladas · se retirará al renovar" : userListing ? (userListing.mine ? "Tu anuncio" : `Vende ${userListing.sellerTeamName}`) : bid ? `Tu puja: ${bid.amount.toFixed(1).replace(".", ",")} M` : player.trend}</small>
                 </div>
-                <button disabled={Boolean(userListing?.mine)} className={`offer-button ${bid ? "has-bid" : ""}`} onClick={() => (isFantasy ? notify(`${player.name} añadido al borrador`) : userListing ? setSelectedUserListing(userListing) : setSelectedPlayer(player))}>
-                  {isFantasy ? "Elegir" : userListing?.mine ? "Tu jugador" : userListing ? "Ofertar" : bid ? "Modificar" : "Pujar"}
+                <button disabled={Boolean(userListing?.mine) || unavailable} className={`offer-button ${bid ? "has-bid" : ""}`} onClick={() => (isFantasy ? notify(`${player.name} añadido al borrador`) : userListing ? setSelectedUserListing(userListing) : setSelectedPlayer(player))}>
+                  {unavailable ? "No disponible" : isFantasy ? "Elegir" : userListing?.mine ? "Tu jugador" : userListing ? "Ofertar" : bid ? "Modificar" : "Pujar"}
                 </button>
               </article>
             );
@@ -9020,7 +9070,21 @@ function BackendUserOffersCenter({ offers, onRespond, onCancel }: { offers: Nexo
   const activeSent = offers.sentOffers.filter((offer) => offer.status === "active" && Date.parse(offer.expiresAt) > now);
   const listingById = new Map(offers.listings.map((listing) => [listing.listingId, listing]));
   const receivedGroups = Array.from(activeReceived.reduce((groups, offer) => {
-    const listing = listingById.get(offer.listingId);
+    const listing = listingById.get(offer.listingId) ?? (offer.direct ? {
+      listingId: offer.listingId,
+      playerId: offer.playerId,
+      name: offer.playerName ?? "Jugador",
+      initials: offer.playerInitials ?? "JU",
+      position: offer.position ?? "MED",
+      club: offer.club ?? "Club",
+      marketValue: 0,
+      askingPrice: 0,
+      sellerMembershipId: offers.membershipId,
+      sellerTeamName: "Tu equipo",
+      sellerName: "Tú",
+      listedAt: offer.createdAt,
+      mine: true,
+    } satisfies NexoUserMarketListing : undefined);
     if (!listing) return groups;
     const current = groups.get(offer.playerId);
     if (current) current.offers.push(offer);
@@ -10137,15 +10201,23 @@ function LeagueRankingView({ leagueId, team, competition, rankingRows, backendEn
       }))
     : demoRanking;
   const rankingHasPoints = ranking.some((item) => item.totalPoints > 0 || item.matchdayPoints > 0);
-  function saveOffer(rival: RivalTeam, player: InitialSquadPlayer, amount: number): string | null {
+  async function saveOffer(rival: RivalTeam, player: InitialSquadPlayer, amount: number): Promise<string | null> {
     const now = Date.now();
     const existing = sentOffers.find((offer) => offer.targetTeamId === rival.id && offer.targetPlayerId === player.id && offer.status === "active" && offer.expiresAt > now);
     const otherCommitment = sentOffers.filter((offer) => offer.status === "active" && offer.expiresAt > now && offer.id !== existing?.id).reduce((total, offer) => total + offer.amount, 0);
     const limit = budget * (1 + rules.maxDebtPercent / 100) - bidCommitment - otherCommitment;
     if (amount <= 0) return "La oferta debe ser superior a 0 M";
     if (amount > limit) return `Solo puedes comprometer ${Math.max(0, limit).toFixed(1).replace(".", ",")} M más`;
+    let persistedId = existing?.id;
+    if (backendEnabled) {
+      try {
+        persistedId = await placeNexoDirectPlayerOffer(leagueId, rival.id, player.id, amount);
+      } catch (error) {
+        return error instanceof Error ? error.message : "No se pudo enviar la oferta";
+      }
+    }
     const next: SentOffer = {
-      id: existing?.id ?? `sent_${crypto.randomUUID()}`,
+      id: persistedId ?? `sent_${crypto.randomUUID()}`,
       targetPlayerId: player.id,
       targetPlayerName: player.name,
       targetTeamId: rival.id,
@@ -10156,6 +10228,8 @@ function LeagueRankingView({ leagueId, team, competition, rankingRows, backendEn
       status: "active",
     };
     onChangeSentOffers(existing ? sentOffers.map((offer) => (offer.id === existing.id ? next : offer)) : [...sentOffers, next]);
+    if (backendEnabled) window.dispatchEvent(new CustomEvent("nexo-user-market-updated"));
+    notify(`Oferta por ${player.name} enviada a ${rival.name}`);
     return null;
   }
   return (
@@ -10218,7 +10292,7 @@ function LeagueRankingView({ leagueId, team, competition, rankingRows, backendEn
   );
 }
 
-function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchases, matchdayStartAt, backendContracts, onSaveOffer, onClausePurchase, onReport, onClose }: { rival: RivalTeam; competition: CompetitionName; budget: number; sentOffers: SentOffer[]; clausePurchases: ClausePurchase[]; matchdayStartAt: number; backendContracts: NexoLeagueContracts | null; onSaveOffer: (player: InitialSquadPlayer, amount: number) => string | null; onClausePurchase: (player: InitialSquadPlayer, clause: number, blind: boolean) => Promise<string | null> | string | null; onReport?: (category: ReportCategory, details: string) => string | null; onClose: () => void }) {
+function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchases, matchdayStartAt, backendContracts, onSaveOffer, onClausePurchase, onReport, onClose }: { rival: RivalTeam; competition: CompetitionName; budget: number; sentOffers: SentOffer[]; clausePurchases: ClausePurchase[]; matchdayStartAt: number; backendContracts: NexoLeagueContracts | null; onSaveOffer: (player: InitialSquadPlayer, amount: number) => Promise<string | null> | string | null; onClausePurchase: (player: InitialSquadPlayer, clause: number, blind: boolean) => Promise<string | null> | string | null; onReport?: (category: ReportCategory, details: string) => string | null; onClose: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState<"plantilla" | "trayectoria">("plantilla");
   const [offerPlayer, setOfferPlayer] = useState<InitialSquadPlayer | null>(null);
@@ -10454,8 +10528,8 @@ function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchase
             onClausePurchase={(clause, blind) => onClausePurchase(offerPlayer, clause, blind)}
             existingOffer={sentOffers.find((offer) => offer.targetTeamId === rival.id && offer.targetPlayerId === offerPlayer.id && offer.status === "active" && offer.expiresAt > Date.now())}
             onClose={() => setOfferPlayer(null)}
-            onSave={(amount) => {
-              const error = onSaveOffer(offerPlayer, amount);
+            onSave={async (amount) => {
+              const error = await onSaveOffer(offerPlayer, amount);
               if (!error) setOfferPlayer(null);
               return error;
             }}
@@ -10683,25 +10757,28 @@ function rivalClauseDetails(player: InitialSquadPlayer) {
   };
 }
 
-function RivalOfferDialog({ player, rival, budget, matchdayStartAt, backendContract, clauseCutoffAt, existingOffer, onClausePurchase, onClose, onSave }: { player: InitialSquadPlayer; rival: RivalTeam; budget: number; matchdayStartAt: number; backendContract?: NexoPlayerContract; clauseCutoffAt?: string; existingOffer?: SentOffer; onClausePurchase: (clause: number, blind: boolean) => Promise<string | null> | string | null; onClose: () => void; onSave: (amount: number) => string | null }) {
+function RivalOfferDialog({ player, rival, budget, matchdayStartAt, backendContract, clauseCutoffAt, existingOffer, onClausePurchase, onClose, onSave }: { player: InitialSquadPlayer; rival: RivalTeam; budget: number; matchdayStartAt: number; backendContract?: NexoPlayerContract; clauseCutoffAt?: string; existingOffer?: SentOffer; onClausePurchase: (clause: number, blind: boolean) => Promise<string | null> | string | null; onClose: () => void; onSave: (amount: number) => Promise<string | null> | string | null }) {
   const [amount, setAmount] = useState((existingOffer?.amount ?? player.value).toFixed(1));
   const [error, setError] = useState("");
   const [confirmClause, setConfirmClause] = useState(false);
   const [clauseBusy, setClauseBusy] = useState(false);
+  const [offerBusy, setOfferBusy] = useState(false);
   const fallbackContract = rivalClauseDetails(player);
   const contract = { clause: backendContract?.clause ?? fallbackContract.clause, blind: backendContract ? Boolean(backendContract.blindUntil && Date.parse(backendContract.blindUntil) > Date.now()) : fallbackContract.blind };
   const clauseDeadline = clauseCutoffAt ? Date.parse(clauseCutoffAt) : matchdayStartAt - 24 * 60 * 60 * 1000;
   const clauseWindowOpen = Date.now() < clauseDeadline;
   const canAffordClause = budget >= contract.clause;
 
-  function submit(event: FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault();
     const parsed = Number(amount.replace(",", "."));
     if (!Number.isFinite(parsed) || parsed <= 0) {
       setError("Introduce una cantidad válida");
       return;
     }
-    const result = onSave(parsed);
+    setOfferBusy(true);
+    const result = await onSave(parsed);
+    setOfferBusy(false);
     if (result) setError(result);
   }
 
@@ -10802,8 +10879,8 @@ function RivalOfferDialog({ player, rival, budget, matchdayStartAt, backendContr
             <button type="button" className="secondary-button" onClick={onClose}>
               Cancelar
             </button>
-            <button type="submit" className="primary-button">
-              {existingOffer ? "Guardar oferta" : "Enviar oferta"}
+            <button type="submit" className="primary-button" disabled={offerBusy}>
+              {offerBusy ? "Enviando…" : existingOffer ? "Guardar oferta" : "Enviar oferta"}
             </button>
           </div>
         </form>
@@ -11908,10 +11985,12 @@ const adminDemoActivity = [
   },
 ];
 
-function FantasyEventsAdminPanel({ events, fixtures, onCreate, onSnapshot }: { events: FantasyEvent[]; fixtures: MatchFixture[]; onCreate: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshot: (eventId: string) => Promise<void> | void }) {
+function FantasyEventsAdminPanel({ events, fixtures, onCreate, onUpdate, onSnapshot }: { events: FantasyEvent[]; fixtures: MatchFixture[]; onCreate: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onUpdate: (eventId: string, event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshot: (eventId: string) => Promise<void> | void }) {
   const [creatorOpen, setCreatorOpen] = useState(false);
   const [detailEventId, setDetailEventId] = useState<string | null>(null);
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const detailEvent = events.find((event) => event.id === detailEventId);
+  const editingEvent = events.find((event) => event.id === editingEventId);
   return (
     <section className="admin-panel fantasy-events-admin">
       <div className="section-title">
@@ -11962,13 +12041,25 @@ function FantasyEventsAdminPanel({ events, fixtures, onCreate, onSnapshot }: { e
         <FantasyEventAdminDetail
           event={detailEvent}
           onClose={() => setDetailEventId(null)}
+          onEdit={() => { setDetailEventId(null); setEditingEventId(detailEvent.id); }}
+        />
+      )}
+      {editingEvent && (
+        <CreateFantasyEventDialog
+          fixtures={fixtures}
+          initialEvent={editingEvent}
+          onClose={() => setEditingEventId(null)}
+          onCreate={async (event) => {
+            await onUpdate(editingEvent.id, event);
+            setEditingEventId(null);
+          }}
         />
       )}
     </section>
   );
 }
 
-function FantasyEventAdminDetail({ event, onClose }: { event: FantasyEvent; onClose: () => void }) {
+function FantasyEventAdminDetail({ event, onClose, onEdit }: { event: FantasyEvent; onClose: () => void; onEdit: () => void }) {
   const clubs = Array.from(new Set(event.fixtures.flatMap((fixture) => [fixture.home, fixture.away])));
   const matchdays = Array.from(new Set(event.fixtures.map((fixture) => fixture.matchday))).sort((a, b) => a - b);
   const formatLabel = event.format === "partidazo" ? "Un partido" : event.format === "matches" ? "Varios partidos" : "Varias jornadas";
@@ -12022,7 +12113,8 @@ function FantasyEventAdminDetail({ event, onClose }: { event: FantasyEvent; onCl
         </section>
 
         <div className="dialog-actions">
-          <button type="button" className="primary-button" onClick={onClose}>Cerrar detalles</button>
+          <button type="button" className="secondary-button" onClick={onClose}>Cerrar detalles</button>
+          <button type="button" className="primary-button" onClick={onEdit}>Editar reto</button>
         </div>
       </section>
     </div>
@@ -12050,20 +12142,22 @@ function buildFantasyFixtureCalendar(competition: CompetitionName): FantasyEvent
   });
 }
 
-function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: MatchFixture[]; onClose: () => void; onCreate: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void }) {
-  const [format, setFormat] = useState<FantasyEventFormat>("partidazo");
-  const [competition, setCompetition] = useState<CompetitionName>("Primera");
+function CreateFantasyEventDialog({ fixtures, initialEvent, onClose, onCreate }: { fixtures: MatchFixture[]; initialEvent?: FantasyEvent; onClose: () => void; onCreate: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void }) {
+  const locked = Boolean(initialEvent?.snapshot);
+  const [format, setFormat] = useState<FantasyEventFormat>(initialEvent?.format ?? "partidazo");
+  const [competition, setCompetition] = useState<CompetitionName>(initialEvent?.competition ?? "Primera");
   const calendar = useMemo(() => fixtures.filter((fixture) => fixture.competition === competition && fixture.status !== "cancelled").map((fixture) => ({ id: fixture.id, home: fixture.home, away: fixture.away, matchday: fixture.matchday, kickoffLabel: fixture.kickoffAt ? new Intl.DateTimeFormat("es-ES", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(fixture.kickoffAt)) : `Jornada ${fixture.matchday}` })), [competition, fixtures]);
   const visibleMatchdays = useMemo(() => Array.from(new Set(calendar.map((fixture) => fixture.matchday))).sort((a, b) => a - b).slice(0, 5), [calendar]);
-  const [name, setName] = useState("El Partidazo");
-  const [selectedFixtureIds, setSelectedFixtureIds] = useState<string[]>([]);
-  const [previousMatchday, setPreviousMatchday] = useState(5);
+  const [name, setName] = useState(initialEvent?.name ?? "El Partidazo");
+  const [description, setDescription] = useState(initialEvent?.description ?? "");
+  const [selectedFixtureIds, setSelectedFixtureIds] = useState<string[]>(initialEvent?.fixtures.map((fixture) => fixture.id) ?? []);
+  const [previousMatchday, setPreviousMatchday] = useState(initialEvent?.previousMatchday ?? 5);
   const [endMatchday, setEndMatchday] = useState(8);
-  const [percentile, setPercentile] = useState(60);
-  const [maxPlayersPerClub, setMaxPlayersPerClub] = useState(6);
-  const [capacity, setCapacity] = useState(500);
-  const [lineupPolicy, setLineupPolicy] = useState<"fixed" | "per_matchday">("fixed");
-  const [featured, setFeatured] = useState(true);
+  const [percentile, setPercentile] = useState(initialEvent?.budgetPercentile ?? 60);
+  const [maxPlayersPerClub, setMaxPlayersPerClub] = useState(initialEvent?.maxPlayersPerClub ?? 6);
+  const [capacity, setCapacity] = useState(initialEvent?.capacity ?? 500);
+  const [lineupPolicy, setLineupPolicy] = useState<"fixed" | "per_matchday">(initialEvent?.lineupPolicy ?? "fixed");
+  const [featured, setFeatured] = useState(initialEvent?.featured ?? true);
   const [error, setError] = useState("");
   const selectedFixtures = calendar.filter((fixture) => selectedFixtureIds.includes(fixture.id));
   const selectedMatchdays = Array.from(new Set(selectedFixtures.map((fixture) => fixture.matchday))).sort((a, b) => a - b);
@@ -12071,17 +12165,20 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
   const snapshotAfterMatchday = selectedMatchdays.length ? Math.max(0, selectedMatchdays[0] - 1) : previousMatchday;
 
   function changeCompetition(value: CompetitionName) {
+    if (initialEvent) return;
     setCompetition(value);
     setSelectedFixtureIds([]);
     setError("");
   }
   function changeFormat(value: FantasyEventFormat) {
+    if (initialEvent) return;
     setFormat(value);
     setError("");
     if (value === "partidazo") setName("El Partidazo");
     if (value === "matches" && name === "El Partidazo") setName("Partidos de la semana");
   }
   function toggleFixture(fixtureId: string) {
+    if (locked) return;
     setSelectedFixtureIds((current) => {
       if (current.includes(fixtureId)) return current.filter((id) => id !== fixtureId);
       if (format === "partidazo") return [fixtureId];
@@ -12114,7 +12211,7 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
     try {
       await onCreate({
       name: name.trim(),
-      description: format === "partidazo" ? `${eventFixtures[0].home} contra ${eventFixtures[0].away}. Un partido, un once, una clasificación.` : `${eventFixtures.length} partidos seleccionados en ${matchdays.length} ${matchdays.length === 1 ? "jornada" : "jornadas"}.`,
+      description: description.trim() || (format === "partidazo" ? `${eventFixtures[0].home} contra ${eventFixtures[0].away}. Un partido, un once, una clasificación.` : `${eventFixtures.length} partidos seleccionados en ${matchdays.length} ${matchdays.length === 1 ? "jornada" : "jornadas"}.`),
       competition,
       competitionId,
       format,
@@ -12138,7 +12235,7 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
         <div className="dialog-header">
           <div>
             <p className="eyebrow">ADMINISTRACIÓN · NUEVO EVENTO</p>
-            <h2 id="fantasy-event-creator-title">Crear liga fantástica</h2>
+            <h2 id="fantasy-event-creator-title">{initialEvent ? "Editar liga fantástica" : "Crear liga fantástica"}</h2>
           </div>
           <button className="dialog-close" onClick={onClose} aria-label="Cerrar">
             ×
@@ -12147,7 +12244,7 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
         <form onSubmit={submit}>
           <div className="fantasy-event-format-tabs">
             {(["partidazo", "matches"] as FantasyEventFormat[]).map((item) => (
-              <button type="button" className={format === item ? "active" : ""} key={item} onClick={() => changeFormat(item)}>
+              <button type="button" className={format === item ? "active" : ""} key={item} onClick={() => changeFormat(item)} disabled={Boolean(initialEvent)}>
                 {item === "partidazo" ? "★ Un partido" : "◆ Varios partidos"}
               </button>
             ))}
@@ -12158,8 +12255,12 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
               <input value={name} maxLength={40} onChange={(event) => setName(event.target.value)} />
             </label>
             <label>
+              <span>Descripción</span>
+              <input value={description} maxLength={180} placeholder="Explica brevemente el reto" onChange={(event) => setDescription(event.target.value)} />
+            </label>
+            <label>
               <span>Competición</span>
-              <select value={competition} onChange={(event) => changeCompetition(event.target.value as CompetitionName)}>
+              <select value={competition} onChange={(event) => changeCompetition(event.target.value as CompetitionName)} disabled={Boolean(initialEvent)}>
                 {(["Primera", "Segunda", "Liga F"] as CompetitionName[]).map((item) => (
                   <option key={item}>{item}</option>
                 ))}
@@ -12174,11 +12275,11 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
             )}
             <label>
               <span>Percentil del presupuesto</span>
-              <input type="number" min="20" max="90" step="5" value={percentile} onChange={(event) => setPercentile(Number(event.target.value))} />
+              <input type="number" min="20" max="90" step="5" value={percentile} disabled={locked} onChange={(event) => setPercentile(Number(event.target.value))} />
             </label>
             <label>
               <span>Máximo por club</span>
-              <input type="number" min="1" max="11" value={maxPlayersPerClub} onChange={(event) => setMaxPlayersPerClub(Number(event.target.value))} />
+              <input type="number" min="1" max="11" value={maxPlayersPerClub} disabled={locked} onChange={(event) => setMaxPlayersPerClub(Number(event.target.value))} />
             </label>
             <label>
               <span>Capacidad</span>
@@ -12187,7 +12288,7 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
             {format !== "partidazo" && (format !== "matches" || selectedMatchdays.length > 1) && (
               <label>
                 <span>Alineación</span>
-                <select value={lineupPolicy} onChange={(event) => setLineupPolicy(event.target.value as "fixed" | "per_matchday")}>
+                <select value={lineupPolicy} disabled={locked} onChange={(event) => setLineupPolicy(event.target.value as "fixed" | "per_matchday")}>
                   <option value="fixed">Una para todo el evento</option>
                   <option value="per_matchday">Nueva en cada jornada</option>
                 </select>
@@ -12267,6 +12368,7 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
               </p>
             </button>
           )}
+          {locked && <p className="form-help">Los precios ya están congelados. Puedes cambiar el nombre, la capacidad y si aparece destacado; calendario, percentil y reglas deportivas permanecen protegidos.</p>}
           <article className="snapshot-pending-preview">
             <span>◷</span>
             <p>
@@ -12279,9 +12381,9 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
             <button type="button" className="secondary-button" onClick={onClose}>
               Cancelar
             </button>
-            <button className="primary-button" type="submit">
-              Crear y publicar
-            </button>
+              <button className="primary-button" type="submit">
+                {initialEvent ? "Guardar cambios" : "Crear y publicar"}
+              </button>
           </div>
         </form>
       </section>
@@ -12289,15 +12391,17 @@ function CreateFantasyEventDialog({ fixtures, onClose, onCreate }: { fixtures: M
   );
 }
 
-function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, careerRules, setCareerRules, onSaveCareerRules, careers, economyRules, setEconomyRules, settlementRules, setSettlementRules, onboardingConfig, onForceOnboarding, legalConfig, onPublishLegalVersion, scoringRules, onChangeScoringRules, teams, leagues, participations, squads, bids, playerContracts, playerOffers, sentOffers, playerCatalog, matchFixtures, matchdays, simulationEnabled, catalogSyncEnabled, onCatalogSyncApplied, onSavePlayer, fantasyEvents, onCreateFantasyEvent, onSnapshotFantasyEvent, onOpenLeague, onRenewMarket, notify }: { marketRules: MarketRules; setMarketRules: (rules: MarketRules) => void; clubRules: ClubRules; setClubRules: (rules: ClubRules) => void; careerRules: CareerRules; setCareerRules: (rules: CareerRules) => void; onSaveCareerRules: (rules: CareerRules) => Promise<void>; careers: NexoCareer[]; economyRules: EconomyRules; setEconomyRules: (rules: EconomyRules) => void; settlementRules: MatchdaySettlementRules; setSettlementRules: (rules: MatchdaySettlementRules) => void; onboardingConfig: OnboardingConfig; onForceOnboarding: (reason: string) => void; legalConfig: LegalConfig; onPublishLegalVersion: (kind: "privacy" | "terms", changeSummary: string) => void; scoringRules: ScoringRule[]; onChangeScoringRules: (rules: ScoringRule[]) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; squads: Record<string, InitialSquad>; bids: Record<string, MarketBid[]>; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; sentOffers: Record<string, SentOffer[]>; playerCatalog: Record<CompetitionName, CompetitionPlayer[]>; matchFixtures: MatchFixture[]; matchdays: NexoMatchdayState[]; simulationEnabled: boolean; catalogSyncEnabled: boolean; onCatalogSyncApplied: () => Promise<void>; onSavePlayer: (player: CompetitionPlayer) => Promise<void>; fantasyEvents: FantasyEvent[]; onCreateFantasyEvent: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshotFantasyEvent: (eventId: string) => Promise<void> | void; onOpenLeague: (leagueId: string) => void; onRenewMarket: (leagueId: string) => Promise<void> | void; notify: (v: string) => void }) {
+function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, careerRules, setCareerRules, onSaveCareerRules, careers, economyRules, setEconomyRules, settlementRules, setSettlementRules, onboardingConfig, onForceOnboarding, legalConfig, onPublishLegalVersion, scoringRules, onChangeScoringRules, teams, leagues, participations, squads, bids, playerContracts, playerOffers, sentOffers, playerCatalog, matchFixtures, matchdays, simulationEnabled, catalogSyncEnabled, onCatalogSyncApplied, onSavePlayer, fantasyEvents, onCreateFantasyEvent, onUpdateFantasyEvent, onSnapshotFantasyEvent, onOpenLeague, onRenewMarket, notify }: { marketRules: MarketRules; setMarketRules: (rules: MarketRules) => void; clubRules: ClubRules; setClubRules: (rules: ClubRules) => void; careerRules: CareerRules; setCareerRules: (rules: CareerRules) => void; onSaveCareerRules: (rules: CareerRules) => Promise<void>; careers: NexoCareer[]; economyRules: EconomyRules; setEconomyRules: (rules: EconomyRules) => void; settlementRules: MatchdaySettlementRules; setSettlementRules: (rules: MatchdaySettlementRules) => void; onboardingConfig: OnboardingConfig; onForceOnboarding: (reason: string) => void; legalConfig: LegalConfig; onPublishLegalVersion: (kind: "privacy" | "terms", changeSummary: string) => void; scoringRules: ScoringRule[]; onChangeScoringRules: (rules: ScoringRule[]) => void; teams: FantasyTeamSummary[]; leagues: LeagueSummary[]; participations: LeagueParticipation[]; squads: Record<string, InitialSquad>; bids: Record<string, MarketBid[]>; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; sentOffers: Record<string, SentOffer[]>; playerCatalog: Record<CompetitionName, CompetitionPlayer[]>; matchFixtures: MatchFixture[]; matchdays: NexoMatchdayState[]; simulationEnabled: boolean; catalogSyncEnabled: boolean; onCatalogSyncApplied: () => Promise<void>; onSavePlayer: (player: CompetitionPlayer) => Promise<void>; fantasyEvents: FantasyEvent[]; onCreateFantasyEvent: (event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onUpdateFantasyEvent: (eventId: string, event: Omit<FantasyEvent, "id" | "memberCount" | "status" | "snapshot">) => Promise<void> | void; onSnapshotFantasyEvent: (eventId: string) => Promise<void> | void; onOpenLeague: (leagueId: string) => void; onRenewMarket: (leagueId: string) => Promise<void> | void; notify: (v: string) => void }) {
   const [section, setSection] = useState<AdminSection>("overview");
   const [selectedUserId, setSelectedUserId] = useState(adminDemoUsers[0].id);
   const [selectedLeagueId, setSelectedLeagueId] = useState(leagues[0]?.id ?? "");
   const [playerCompetition, setPlayerCompetition] = useState<CompetitionName>("Primera");
   const [playerQuery, setPlayerQuery] = useState("");
+  const [playerStatus,setPlayerStatus]=useState<"all"|"active"|"inactive">("all");
   const [adminMatchday, setAdminMatchday] = useState(1);
   const [backendPlayerPoints,setBackendPlayerPoints]=useState<Record<string,number>>({});
   const [editingPlayer, setEditingPlayer] = useState<CompetitionPlayer | null>(null);
+  const [editablePlayerCatalog,setEditablePlayerCatalog]=useState(playerCatalog);
   const [renewConfirmLeagueId, setRenewConfirmLeagueId] = useState<string | null>(null);
   const [renewingLeagueId, setRenewingLeagueId] = useState<string | null>(null);
   const allReceivedOffers = Object.values(playerOffers).flat();
@@ -12314,7 +12418,15 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, caree
   const selectedBids = bids[selectedLeague?.id ?? ""] ?? [];
   const selectedSentOffers = sentOffers[selectedLeague?.id ?? ""] ?? [];
   const selectedListedPlayers = selectedParticipationIds.flatMap((participationId) => (squads[participationId]?.players ?? []).filter((player) => playerContracts[`${participationId}:${player.id}`]?.listed));
-  const visiblePlayers = playerCatalog[playerCompetition].filter((player) => `${player.name} ${player.club}`.toLocaleLowerCase("es").includes(playerQuery.toLocaleLowerCase("es")));
+  const visiblePlayers = editablePlayerCatalog[playerCompetition].filter((player) => (playerStatus==="all"||(playerStatus==="active" ? player.active!==false : player.active===false)) && `${player.name} ${player.club}`.toLocaleLowerCase("es").includes(playerQuery.toLocaleLowerCase("es")));
+  useEffect(()=>{
+    if(section!=="players"||!simulationEnabled)return;
+    let current=true;
+    const refresh=()=>loadNexoAdminPlayerCatalog().then((catalog)=>{if(current)setEditablePlayerCatalog(catalog)}).catch(()=>{});
+    void refresh();
+    window.addEventListener("nexo-player-catalog-updated",refresh);
+    return()=>{current=false;window.removeEventListener("nexo-player-catalog-updated",refresh)};
+  },[section,simulationEnabled]);
   useEffect(()=>{
     if(section!=="players"||!simulationEnabled)return;
     let current=true;
@@ -12325,6 +12437,11 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, caree
   async function savePlayer(nextPlayer: CompetitionPlayer) {
     try {
       await onSavePlayer(nextPlayer);
+      setEditablePlayerCatalog((current)=>{
+        const next=Object.fromEntries(Object.entries(current).map(([competition,items])=>[competition,items.filter((item)=>item.id!==nextPlayer.id)])) as Record<CompetitionName,CompetitionPlayer[]>;
+        next[nextPlayer.competition]=[...next[nextPlayer.competition],nextPlayer].sort((a,b)=>a.name.localeCompare(b.name,"es"));
+        return next;
+      });
       setEditingPlayer(null);
       notify(`Ficha de ${nextPlayer.name} actualizada`);
     } catch {
@@ -12418,7 +12535,7 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, caree
             </article>
           </section>
           <CalendarSyncAdminPanel enabled={catalogSyncEnabled} notify={notify} />
-          <FantasyEventsAdminPanel events={fantasyEvents} fixtures={matchFixtures} onCreate={onCreateFantasyEvent} onSnapshot={onSnapshotFantasyEvent} />
+          <FantasyEventsAdminPanel events={fantasyEvents} fixtures={matchFixtures} onCreate={onCreateFantasyEvent} onUpdate={onUpdateFantasyEvent} onSnapshot={onSnapshotFantasyEvent} />
           <MatchdaySettlementAdminPanel rules={settlementRules} onChange={setSettlementRules} matchdays={matchdays} enabled={simulationEnabled} notify={notify} />
           <OnboardingAdminPanel config={onboardingConfig} onForce={onForceOnboarding} />
           <LegalVersionsAdminPanel config={legalConfig} onPublish={onPublishLegalVersion} />
@@ -12684,13 +12801,19 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, caree
                 <p className="eyebrow">CATÁLOGO MAESTRO</p>
                 <h2>Jugadores de todas las divisiones</h2>
               </div>
-              <span className="active-tag">{Object.values(playerCatalog).flat().length} fichas</span>
+              <span className="active-tag">{Object.values(editablePlayerCatalog).flat().length} fichas</span>
             </div>
             <div className="admin-player-toolbar">
               <CompetitionTabs value={playerCompetition} onChange={setPlayerCompetition} />
               <label className="search-box">
                 <span>⌕</span>
                 <input value={playerQuery} onChange={(event) => setPlayerQuery(event.target.value)} placeholder="Buscar jugador o club" />
+              </label>
+              <label className="admin-matchday-select">
+                <span>Estado</span>
+                <select value={playerStatus} onChange={(event)=>setPlayerStatus(event.target.value as typeof playerStatus)}>
+                  <option value="all">Todos</option><option value="active">Activos</option><option value="inactive">Fuera de competición</option>
+                </select>
               </label>
               <label className="admin-matchday-select">
                 <span>Jornada</span>
@@ -12719,7 +12842,7 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, caree
                     <Avatar label={player.initials} />
                     <div>
                       <strong>{player.name}</strong>
-                      <small>{player.id}</small>
+                      <small>{player.active === false ? "FUERA DE LA COMPETICIÓN" : "ACTIVO"} · {player.id}</small>
                     </div>
                     <span>{player.position}</span>
                     <span>{player.club}</span>
@@ -12906,6 +13029,7 @@ function CatalogSyncAdminPanel({ enabled, onApplied, notify }: { enabled: boolea
       setPreview(result);
       if (mode === "apply") {
         await onApplied();
+        window.dispatchEvent(new Event("nexo-player-catalog-updated"));
         notify(`Catálogo actualizado: ${result.summary.total} jugadores`);
       }
       await refreshHistory();
@@ -12923,7 +13047,7 @@ function CatalogSyncAdminPanel({ enabled, onApplied, notify }: { enabled: boolea
         <div>
           <p className="eyebrow">FUENTES OFICIALES · SINCRONIZACIÓN</p>
           <h2>Actualizar plantillas</h2>
-          <p>Comprueba LALIGA y Liga F desde el backend. Las fichas que desaparecen se desactivan sin borrar su historial.</p>
+          <p>Comprueba LALIGA y Liga F desde el backend. Las fichas que desaparecen se desactivan sin borrar su historial y los datos oficiales sustituyen las correcciones manuales anteriores.</p>
         </div>
         <span className="catalog-source-lock">PROTEGIDO</span>
       </header>
@@ -12941,9 +13065,18 @@ function CatalogSyncAdminPanel({ enabled, onApplied, notify }: { enabled: boolea
           <small>Los ajustes manuales se conservan</small>
         </span>
       </div>
+      <article className="catalog-sync-lifecycle-note">
+        <strong>Qué ocurrirá al aplicar los cambios</strong>
+        <span><b>Altas</b> estarán disponibles en operaciones futuras, sin alterar equipos existentes.</span>
+        <span><b>Cambio de club</b> conservará propietario y operaciones si continúa en la misma división.</span>
+        <span><b>Bajas o cambio de división</b> conservarán el historial y la Carrera, pero cancelarán pujas, anuncios y ofertas incompatibles.</span>
+        <span><b>Onces cerrados y retos congelados</b> no se modificarán nunca.</span>
+        <span><b>Correcciones manuales</b> de nombre, club, división, posición, estado y foto se reemplazarán por la fuente; el valor interno se conserva.</span>
+      </article>
+      <article className="catalog-sync-demo-note"><b>Valor de una nueva alta:</b> base por posición —POR 5,8 M, DEF 6,1 M, MED 6,7 M y DEL 7,1 M— más una variación estable de ±0,4 M. Después evoluciona con el algoritmo global.</article>
       {!enabled && <article className="catalog-sync-demo-note">Inicia sesión con una cuenta administradora real para consultar las fuentes y actualizar Supabase.</article>}
       {summary && (
-        <div className="catalog-sync-summary">
+        <><div className="catalog-sync-summary">
           <span>
             <small>NUEVOS</small>
             <strong>+{summary.additions}</strong>
@@ -12966,6 +13099,14 @@ function CatalogSyncAdminPanel({ enabled, onApplied, notify }: { enabled: boolea
               {summary.competitions.primera} · {summary.competitions.segunda} · {summary.competitions.liga_f}
             </strong>
           </span>
+        </div><p className="catalog-change-breakdown">{summary.competitionChanges ?? 0} cambios de división · {summary.clubChanges ?? 0} cambios de club · {summary.positionChanges ?? 0} cambios de posición · {summary.reactivations ?? 0} reactivaciones</p></>
+      )}
+      {summary?.reconciliation && (
+        <div className="catalog-reconciliation-summary">
+          <strong>Reconciliación aplicada</strong>
+          <span>{summary.reconciliation.systemListingsCancelled + summary.reconciliation.userListingsCancelled} anuncios retirados</span>
+          <span>{summary.reconciliation.systemBidsCancelled + summary.reconciliation.userOffersCancelled + summary.reconciliation.directOffersCancelled} pujas y ofertas canceladas</span>
+          <span>{summary.reconciliation.lineupsRequiringReview} alineaciones futuras para revisar</span>
         </div>
       )}
       {error && <p className="form-error">{error}</p>}
@@ -13001,8 +13142,11 @@ function CatalogSyncAdminPanel({ enabled, onApplied, notify }: { enabled: boolea
 function AdminPlayerEditor({ player, onClose, onSave }: { player: CompetitionPlayer; onClose: () => void; onSave: (player: CompetitionPlayer) => void }) {
   const [name, setName] = useState(player.name);
   const [club, setClub] = useState(player.club);
+  const [competition,setCompetition]=useState<CompetitionName>(player.competition);
   const [position, setPosition] = useState<PlayerPosition>(player.position);
   const [value, setValue] = useState(player.value.toFixed(1));
+  const [photoUrl,setPhotoUrl]=useState(player.photoUrl ?? "");
+  const [active,setActive]=useState(player.active !== false);
   const [error, setError] = useState("");
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -13015,8 +13159,11 @@ function AdminPlayerEditor({ player, onClose, onSave }: { player: CompetitionPla
       ...player,
       name: name.trim(),
       club: club.trim(),
+      competition,
       position,
       value: Number(parsedValue.toFixed(1)),
+      photoUrl: photoUrl.trim() || undefined,
+      active,
       initials: name
         .trim()
         .split(/\s+/)
@@ -13049,6 +13196,21 @@ function AdminPlayerEditor({ player, onClose, onSave }: { player: CompetitionPla
           </label>
           <div className="admin-player-form-row">
             <label>
+              <span>Competición</span>
+              <select value={competition} onChange={(event)=>setCompetition(event.target.value as CompetitionName)}>
+                <option>Primera</option><option>Segunda</option><option>Liga F</option>
+              </select>
+            </label>
+            <label>
+              <span>Estado</span>
+              <select value={active ? "active" : "inactive"} onChange={(event)=>setActive(event.target.value==="active")}>
+                <option value="active">Activo y disponible</option>
+                <option value="inactive">Fuera de la competición</option>
+              </select>
+            </label>
+          </div>
+          <div className="admin-player-form-row">
+            <label>
               <span>Posición</span>
               <select value={position} onChange={(event) => setPosition(event.target.value as PlayerPosition)}>
                 {["POR", "DEF", "MED", "DEL"].map((item) => (
@@ -13064,7 +13226,11 @@ function AdminPlayerEditor({ player, onClose, onSave }: { player: CompetitionPla
               </div>
             </label>
           </div>
-          <p className="bid-privacy-note">El cambio queda preparado para publicarse de forma global y versionada en todas las ligas.</p>
+          <label>
+            <span>URL de la fotografía</span>
+            <input type="url" value={photoUrl} onChange={(event)=>setPhotoUrl(event.target.value)} placeholder="https://…" />
+          </label>
+          <p className="bid-privacy-note">El cambio se aplica inmediatamente. La próxima sincronización oficial volverá a fijar nombre, club, competición, posición, estado y fotografía. El valor de mercado se gestiona por separado porque la fuente de plantillas no proporciona ese dato.</p>
           {error && <p className="form-error">{error}</p>}
           <div className="dialog-actions">
             <button type="button" className="secondary-button" onClick={onClose}>

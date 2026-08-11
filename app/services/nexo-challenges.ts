@@ -140,6 +140,30 @@ export async function createNexoChallenge(input: {
   return data as string;
 }
 
+export async function updateNexoChallenge(leagueId: string, input: {
+  name: string;
+  description: string;
+  fixtureIds: string[];
+  lineupPolicy: "fixed" | "per_matchday";
+  maxPlayersPerClub: number;
+  capacity: number;
+  featured: boolean;
+  budgetPercentile: number;
+}): Promise<void> {
+  const { error } = await requireClient().rpc("admin_update_fantasy_challenge", {
+    target_league_id: leagueId,
+    challenge_name: input.name,
+    challenge_description: input.description,
+    selected_fixture_ids: input.fixtureIds,
+    requested_lineup_policy: input.lineupPolicy,
+    requested_max_players_per_club: input.maxPlayersPerClub,
+    requested_capacity: input.capacity,
+    requested_featured: input.featured,
+    requested_budget_percentile: input.budgetPercentile,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function snapshotNexoChallenge(leagueId: string): Promise<void> {
   const { error } = await requireClient().rpc("admin_snapshot_fantasy_challenge", { target_league_id: leagueId });
   if (error) throw new Error(error.message);

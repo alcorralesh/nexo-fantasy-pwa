@@ -9,6 +9,7 @@ export type NexoPlayerContract = {
   blindUntil?: string;
   marketValue: number;
   isStarter: boolean;
+  availabilityStatus: "active" | "out_of_competition" | "changed_competition";
 };
 
 export type NexoContractRules = {
@@ -20,6 +21,7 @@ export type NexoContractRules = {
   blindageDurationHours: number;
   immediateSaleEnabled: boolean;
   immediateSalePercent: number;
+  realExitSalePercent: number;
   maxBenchPlayers: number;
 };
 
@@ -51,6 +53,7 @@ export async function loadNexoLeagueContracts(leagueId: string): Promise<NexoLea
       clauseCutoffHours: Number(rules.clauseCutoffHours), clauseRaiseCostPercent: Number(rules.clauseRaiseCostPercent),
       blindagesEnabled: Boolean(rules.blindagesEnabled), blindageDurationHours: Number(rules.blindageDurationHours),
       immediateSaleEnabled: Boolean(rules.immediateSaleEnabled), immediateSalePercent: Number(rules.immediateSalePercent),
+      realExitSalePercent: Number(rules.realExitSalePercent ?? 100),
       maxBenchPlayers: Number(rules.maxBenchPlayers),
     },
     contracts: ((row.contracts ?? []) as Record<string, unknown>[]).map((contract) => ({
@@ -58,6 +61,7 @@ export async function loadNexoLeagueContracts(leagueId: string): Promise<NexoLea
       ownerTeamName: String(contract.ownerTeamName), mine: Boolean(contract.mine), clause: Number(contract.clause),
       blindUntil: contract.blindUntil ? String(contract.blindUntil) : undefined,
       marketValue: Number(contract.marketValue), isStarter: Boolean(contract.isStarter),
+      availabilityStatus: String(contract.availabilityStatus ?? "active") as NexoPlayerContract["availabilityStatus"],
     })),
   };
 }
@@ -83,5 +87,5 @@ export async function buyNexoPlayerClause(leagueId: string, playerId: string) {
 export async function sellNexoPlayerImmediately(leagueId: string, playerId: string) {
   const { data, error } = await requireClient().rpc("sell_my_player_immediately", { target_league_id: leagueId, target_player_id: playerId });
   if (error) throw new Error(error.message);
-  return data as { playerId: string; amount: number; budget: number };
+  return data as { playerId: string; amount: number; budget: number; protectedExit?: boolean };
 }

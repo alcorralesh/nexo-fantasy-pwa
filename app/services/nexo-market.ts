@@ -11,6 +11,8 @@ export type NexoMarketListing = {
   price: number;
   photoUrl?: string;
   listedAt: string;
+  availabilityStatus: "active" | "out_of_competition";
+  unavailableReason?: string;
 };
 
 export type NexoMarketBid = {
@@ -89,6 +91,10 @@ export type NexoUserMarketOffer = {
   playerName?: string;
   sellerMembershipId?: string;
   sellerTeamName?: string;
+  direct?: boolean;
+  playerInitials?: string;
+  position?: PlayerPosition;
+  club?: string;
 };
 
 export type NexoLeagueUserMarket = {
@@ -142,15 +148,23 @@ export async function loadNexoLeagueActivity(leagueId: string): Promise<NexoLeag
 }
 
 export async function loadNexoLeagueUserMarket(leagueId: string): Promise<NexoLeagueUserMarket> {
-  const { data, error } = await requireClient().rpc("my_league_user_market", { target_league_id: leagueId });
+  const client = requireClient();
+  const [{ data, error }, { data: directData, error: directError }] = await Promise.all([
+    client.rpc("my_league_user_market", { target_league_id: leagueId }),
+    client.rpc("my_league_direct_player_offers", { target_league_id: leagueId }),
+  ]);
   if (error) throw new Error(error.message);
+  if (directError) throw new Error(directError.message);
   const row = data as Record<string, unknown>;
+  const directRow = directData as Record<string, unknown>;
+  const directReceived = ((directRow.receivedOffers ?? []) as Record<string, unknown>[]).map(mapUserOffer);
+  const directSent = ((directRow.sentOffers ?? []) as Record<string, unknown>[]).map(mapUserOffer);
   return {
     leagueId: String(row.leagueId),
     membershipId: String(row.membershipId),
     listings: ((row.listings ?? []) as Record<string, unknown>[]).map(mapUserListing),
-    receivedOffers: ((row.receivedOffers ?? []) as Record<string, unknown>[]).map(mapUserOffer),
-    sentOffers: ((row.sentOffers ?? []) as Record<string, unknown>[]).map(mapUserOffer),
+    receivedOffers: [...((row.receivedOffers ?? []) as Record<string, unknown>[]).map(mapUserOffer), ...directReceived],
+    sentOffers: [...((row.sentOffers ?? []) as Record<string, unknown>[]).map(mapUserOffer), ...directSent],
   };
 }
 
@@ -171,13 +185,26 @@ export async function placeNexoUserMarketOffer(listingId: string, amount: number
   return String(data);
 }
 
+export async function placeNexoDirectPlayerOffer(leagueId: string, sellerMembershipId: string, playerId: string, amount: number): Promise<string> {
+  const { data, error } = await requireClient().rpc("place_my_direct_player_offer", {
+    target_league_id: leagueId,
+    target_seller_membership_id: sellerMembershipId,
+    target_player_id: playerId,
+    target_amount: amount,
+  });
+  if (error) throw new Error(error.message);
+  return `direct:${String(data)}`;
+}
+
 export async function cancelNexoUserMarketOffer(offerId: string): Promise<void> {
-  const { error } = await requireClient().rpc("cancel_my_user_market_offer", { target_offer_id: offerId });
+  const direct = offerId.startsWith("direct:");
+  const { error } = await requireClient().rpc(direct ? "cancel_my_direct_player_offer" : "cancel_my_user_market_offer", { target_offer_id: direct ? offerId.slice(7) : offerId });
   if (error) throw new Error(error.message);
 }
 
 export async function respondNexoUserMarketOffer(offerId: string, accept: boolean): Promise<void> {
-  const { error } = await requireClient().rpc("respond_to_my_user_market_offer", { target_offer_id: offerId, accept_offer: accept });
+  const direct = offerId.startsWith("direct:");
+  const { error } = await requireClient().rpc(direct ? "respond_to_my_direct_player_offer" : "respond_to_my_user_market_offer", { target_offer_id: direct ? offerId.slice(7) : offerId, accept_offer: accept });
   if (error) throw new Error(error.message);
 }
 
@@ -233,6 +260,8 @@ function mapMarket(row: Record<string, unknown>): NexoLeagueMarket {
       price: Number(listing.price),
       photoUrl: listing.photoUrl ? String(listing.photoUrl) : undefined,
       listedAt: String(listing.listedAt),
+      availabilityStatus: String(listing.availabilityStatus ?? "active") as NexoMarketListing["availabilityStatus"],
+      unavailableReason: listing.unavailableReason ? String(listing.unavailableReason) : undefined,
     })),
     myBids: ((row.myBids ?? []) as Record<string, unknown>[]).map((bid) => ({
       bidId: String(bid.bidId),
@@ -254,8 +283,9 @@ function mapUserListing(row: Record<string, unknown>): NexoUserMarketListing {
 }
 
 function mapUserOffer(row: Record<string, unknown>): NexoUserMarketOffer {
+  const direct = Boolean(row.direct);
   return {
-    offerId: String(row.offerId), listingId: String(row.listingId), playerId: String(row.playerId), amount: Number(row.amount),
+    offerId: direct ? `direct:${String(row.offerId)}` : String(row.offerId), listingId: direct ? `direct:${String(row.offerId)}` : String(row.listingId), playerId: String(row.playerId), amount: Number(row.amount),
     status: row.status as NexoUserMarketOffer["status"], createdAt: String(row.createdAt), expiresAt: String(row.expiresAt),
     resolvedAt: row.resolvedAt ? String(row.resolvedAt) : undefined,
     bidderMembershipId: row.bidderMembershipId ? String(row.bidderMembershipId) : undefined,
@@ -265,5 +295,9 @@ function mapUserOffer(row: Record<string, unknown>): NexoUserMarketOffer {
     playerName: row.playerName ? String(row.playerName) : undefined,
     sellerMembershipId: row.sellerMembershipId ? String(row.sellerMembershipId) : undefined,
     sellerTeamName: row.sellerTeamName ? String(row.sellerTeamName) : undefined,
+    direct,
+    playerInitials: row.playerInitials ? String(row.playerInitials) : undefined,
+    position: row.position as PlayerPosition | undefined,
+    club: row.club ? String(row.club) : undefined,
   };
 }
