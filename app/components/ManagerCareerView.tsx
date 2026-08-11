@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { CompetitionName, PlayerPosition } from "../data";
 import type { CompetitionPlayer } from "../data/competition-players";
 import type { MatchFixture } from "../services/nexo-calendar";
-import { buyNexoCareerPlayer, loadNexoCareerRanking, loadNexoCareerWorkspace, markNexoCareerReportViewed, saveNexoCareerDecision, saveNexoCareerLineup, sellNexoCareerPlayer, type NexoCareer, type NexoCareerDecision, type NexoCareerDecisionChoice, type NexoCareerDecisionPrompt, type NexoCareerLineup, type NexoCareerMatchdayReport, type NexoCareerObjective, type NexoCareerPlayer, type NexoCareerRanking, type NexoCareerRankingRow, type NexoCareerWorkspace } from "../services/nexo-career";
+import { buyNexoCareerPlayer, delegateNexoCareerMatchday, loadNexoCareerRanking, loadNexoCareerWorkspace, markNexoCareerReportViewed, resolveNexoCareerCatalogIncident, saveNexoCareerDecision, saveNexoCareerInterludeDecision, saveNexoCareerLineup, sellNexoCareerPlayer, type NexoCareer, type NexoCareerCatalogIncident, type NexoCareerCatalogIncidentChoice, type NexoCareerDecision, type NexoCareerDecisionChoice, type NexoCareerDecisionPrompt, type NexoCareerDelegationPlan, type NexoCareerInterlude, type NexoCareerInterludeChoice, type NexoCareerLineup, type NexoCareerMatchdayReport, type NexoCareerObjective, type NexoCareerPlayer, type NexoCareerRanking, type NexoCareerRankingRow, type NexoCareerWorkspace } from "../services/nexo-career";
 
-type CareerRules = { minimumOriginalSquad: number; minimumOriginalLineup: number; weeklyDecisionEnabled: boolean; dismissalConfidenceThreshold: number; sameClubRankingEnabled: boolean };
+type CareerRules = { minimumOriginalSquad: number; minimumOriginalLineup: number; weeklyDecisionEnabled: boolean; dismissalConfidenceThreshold: number; sameClubRankingEnabled: boolean; delegationEnabled: boolean };
 type Area = "overview" | "lineup" | "market";
 const formations: Record<string, Record<PlayerPosition, number>> = {
   "4-4-2": { POR: 1, DEF: 4, MED: 4, DEL: 2 }, "4-3-3": { POR: 1, DEF: 4, MED: 3, DEL: 3 }, "3-4-3": { POR: 1, DEF: 3, MED: 4, DEL: 3 }, "3-5-2": { POR: 1, DEF: 3, MED: 5, DEL: 2 }, "5-3-2": { POR: 1, DEF: 5, MED: 3, DEL: 2 },
@@ -26,7 +26,7 @@ function demoWorkspace(career: NexoCareer, players: Record<CompetitionName, Comp
     { id:"confidence",type:"confidence",title:"Respaldo de la directiva",description:"Termina con al menos 70 puntos de confianza.",targetValue:70,currentValue:60,reputationReward:10,failurePenalty:8,status:"active" },
   ];
   const decisionPrompt: NexoCareerDecisionPrompt = { key:"youth_minutes",title:"El vestuario pide una señal",description:"Un joven reclama protagonismo antes de un partido importante.",choices:[{key:"academy",title:"Apostar por la cantera",summary:"Inversión de futuro con una condición deportiva.",reputationChange:3,confidenceChange:2,budgetChange:-0.5,sportingPointsChange:0,condition:"Alinea al menos 8 originales",conditionalBonus:3},{key:"experience",title:"Proteger el resultado",summary:"Menor impacto social, pero una ayuda deportiva segura.",reputationChange:1,confidenceChange:1,budgetChange:0,sportingPointsChange:1,conditionalBonus:0}] };
-  return { budget: career.budget, matchday: career.matchday, boardConfidence: 60, consecutiveFailures: 0, contractTier: "stability", status: career.status, squad, market, lineups: [], decisions: [], objectives, events: [], reports: [], decisionPrompt };
+  return { budget: career.budget, matchday: career.matchday, boardConfidence: 60, consecutiveFailures: 0, contractTier: "stability", status: career.status, squad, market, lineups: [], decisions: [], objectives, events: [], incidents: [], reports: [], delegation:{enabled:true,eligible:true,used:0,baseMaximum:5,bonusUses:0,maximum:5,remaining:5,cooldownMatchdays:3,nextAvailableMatchday:career.matchday,recommended:false,recommendationReasons:[],plans:[{key:"close_ranks",title:"Cerrar filas",description:"Recupera respaldo inmediato y reduce una mala racha.",cost:.5,confidenceChange:6,failuresReduced:1},{key:"tactical",title:"Golpe táctico",description:"Once automático con vicecapitán y suplencias por ausencia.",cost:.5,confidenceChange:0,failuresReduced:0},{key:"academy",title:"Proyecto de cantera",description:"Prioriza y potencia a los jugadores originales.",cost:.75,confidenceChange:0,failuresReduced:0,pointsMultiplier:1.1,identityRewardMultiplier:2}]}, decisionPrompt };
 }
 
 export function ManagerCareerView({ career, players, fixtures, rules, backendEnabled, onCareerChanged, onBack, onNewCareer, notify }: { career?: NexoCareer; players: Record<CompetitionName, CompetitionPlayer[]>; fixtures: MatchFixture[]; rules: CareerRules; backendEnabled: boolean; onCareerChanged: () => Promise<void>; onBack: () => void; onNewCareer: () => void; notify: (value: string) => void }) {
@@ -39,6 +39,7 @@ export function ManagerCareerView({ career, players, fixtures, rules, backendEna
   const [selectedLineupMatchday, setSelectedLineupMatchday] = useState(career?.matchday ?? 1);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [delegationOpen,setDelegationOpen]=useState(false);
 
   async function refresh() {
     if (!career) return;
@@ -57,6 +58,7 @@ export function ManagerCareerView({ career, players, fixtures, rules, backendEna
   const state = workspace ?? demoWorkspace(career, players);
   if (state.status === "dismissed") return <section className="manager-career-page dismissed-career-page"><header className="career-topline"><button className="career-topline-action back" onClick={onBack}><span>←</span>Volver a Clubes</button><p><span>CARRERA DE MÁNAGER</span><strong>{career.sportsClubName}</strong><small>{career.seasonLabel} · Carrera finalizada</small></p><button className="career-topline-action new" onClick={onNewCareer}><span>＋</span>Nueva carrera</button></header><DismissedCareerView career={career} workspace={state} rules={rules} ranking={ranking} onRanking={()=>setRankingOpen(true)} onBack={onBack} onNewCareer={onNewCareer}/>{rankingOpen&&ranking&&<CareerRankingDialog career={career} ranking={ranking} onClose={()=>setRankingOpen(false)}/>}</section>;
   const currentDecision = state.decisions.find((item) => item.matchday === career.matchday);
+  const pendingIncident = state.incidents.find((item) => item.status === "pending");
   const nextFixture = fixtures.filter((fixture) => fixture.competition === career.competition && fixture.matchday >= career.matchday && fixture.status !== "final").find((fixture) => fixture.home === career.sportsClubName || fixture.away === career.sportsClubName);
   const alignedPlayerIds = lineupDraft?.playerIds ?? state.lineups.find((item) => item.matchday === career.matchday)?.playerIds ?? [];
 
@@ -79,6 +81,19 @@ export function ManagerCareerView({ career, players, fixtures, rules, backendEna
     setLineupDraft(lineup);
     setWorkspace((current) => ({ ...(current ?? state), lineups: [lineup, ...(current ?? state).lineups.filter((item) => item.matchday !== lineup.matchday)] }));
     notify(`Once de la Jornada ${lineup.matchday} guardado`);
+  }
+
+  async function resolveIncident(incident: NexoCareerCatalogIncident, choice: NexoCareerCatalogIncidentChoice) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      if (backendEnabled) {
+        await resolveNexoCareerCatalogIncident(incident.id, choice.key);
+        await Promise.all([refresh(), onCareerChanged()]);
+      }
+      notify(`${choice.title}: ${choice.budgetCredit.toFixed(2).replace(".", ",")} M añadidos al presupuesto`);
+    } catch (error) { notify(error instanceof Error ? error.message : "No se ha podido resolver la salida"); }
+    finally { setBusy(false); }
   }
 
   async function operate(type: "buy" | "sell", player: NexoCareerPlayer) {
@@ -105,13 +120,38 @@ export function ManagerCareerView({ career, players, fixtures, rules, backendEna
     setRevealReport(null);setArea(next==="lineup"?"lineup":"overview");
   }
 
+  async function delegate(plan:NexoCareerDelegationPlan){
+    if(busy)return;setBusy(true);
+    try{if(backendEnabled){await delegateNexoCareerMatchday(career!.id,plan.key);await Promise.all([refresh(),onCareerChanged()]);}notify(`${plan.title} activado para la Jornada ${career!.matchday}`);setDelegationOpen(false);setLineupDraft(null);}
+    catch(error){notify(error instanceof Error?error.message:"No se ha podido delegar la jornada")}finally{setBusy(false)}
+  }
+
+  async function decideInterlude(choice:NexoCareerInterludeChoice){
+    if(busy||!state.interlude)return;
+    setBusy(true);
+    try{
+      if(backendEnabled){
+        await saveNexoCareerInterludeDecision(career!.id,state.interlude.id,choice.key);
+        await Promise.all([refresh(),onCareerChanged()]);
+      }
+      notify(`${choice.title}: plan de interludio confirmado`);
+    }catch(error){notify(error instanceof Error?error.message:"No se ha podido guardar el plan del interludio")}
+    finally{setBusy(false)}
+  }
+
   return <section className="manager-career-page">
     <header className="career-topline"><button className="career-topline-action back" onClick={area === "overview" ? onBack : () => setArea("overview")}><span>←</span>{area === "overview" ? "Volver a Clubes" : "Volver al resumen"}</button><p><span>CARRERA DE MÁNAGER</span><strong>{career.sportsClubName}</strong><small>{career.seasonLabel} · Jornada {career.matchday}</small></p><button className="career-topline-action new" onClick={onNewCareer}><span>＋</span>Nueva carrera</button></header>
-    <nav className="career-area-tabs"><button className={area === "overview" ? "active" : ""} onClick={() => setArea("overview")}>Resumen</button><button className={area === "lineup" ? "active" : ""} onClick={() => setArea("lineup")}>Mi once</button><button className={area === "market" ? "active" : ""} onClick={() => setArea("market")}>Mercado</button></nav>
-    {loading ? <div className="career-workspace-loading"><strong>Preparando tu despacho…</strong><span>Cargando plantilla, once y mercado individual.</span></div> : area === "lineup" ? <CareerLineupHistory career={career} workspace={state} rules={rules} draft={lineupDraft} selectedMatchday={selectedLineupMatchday} catalog={players[career.competition]} onSelectMatchday={setSelectedLineupMatchday} onDraftChange={setLineupDraft} onSave={saveLineup} notify={notify} /> : area === "market" ? <CareerMarket career={career} workspace={state} rules={rules} alignedPlayerIds={alignedPlayerIds} busy={busy} onOperation={operate} /> : <CareerOverview career={career} workspace={state} nextFixture={nextFixture} rules={rules} decision={currentDecision} ranking={ranking} busy={busy} onArea={setArea} onDecision={decide} onRanking={()=>setRankingOpen(true)} />}
+    <nav className="career-area-tabs"><button className={area === "overview" ? "active" : ""} onClick={() => setArea("overview")}>Resumen</button><button disabled={!!pendingIncident} className={area === "lineup" ? "active" : ""} onClick={() => setArea("lineup")}>Mi once{pendingIncident?" · pendiente":""}</button><button disabled={!!pendingIncident||!!state.delegation.current} className={area === "market" ? "active" : ""} onClick={() => setArea("market")}>Mercado{state.delegation.current?" · delegado":pendingIncident?" · pendiente":""}</button></nav>
+    {loading ? <div className="career-workspace-loading"><strong>Preparando tu despacho…</strong><span>Cargando plantilla, once y mercado individual.</span></div> : area === "lineup" ? <CareerLineupHistory career={career} workspace={state} rules={rules} draft={lineupDraft} selectedMatchday={selectedLineupMatchday} catalog={players[career.competition]} onSelectMatchday={setSelectedLineupMatchday} onDraftChange={setLineupDraft} onSave={saveLineup} notify={notify} /> : area === "market" ? <CareerMarket career={career} workspace={state} rules={rules} alignedPlayerIds={alignedPlayerIds} busy={busy} onOperation={operate} /> : <CareerOverview career={career} workspace={state} nextFixture={nextFixture} rules={rules} decision={currentDecision} pendingIncident={pendingIncident} ranking={ranking} busy={busy} onArea={setArea} onDecision={decide} onIncident={resolveIncident} onRanking={()=>setRankingOpen(true)} onDelegate={()=>setDelegationOpen(true)} />}
     {rankingOpen&&ranking&&<CareerRankingDialog career={career} ranking={ranking} onClose={()=>setRankingOpen(false)}/>} 
     {revealReport&&<CareerMatchdayReveal career={career} report={revealReport} onClose={closeReveal}/>} 
+    {delegationOpen&&<CareerDelegationDialog workspace={state} busy={busy} onSelect={delegate} onClose={()=>setDelegationOpen(false)}/>}
   </section>;
+}
+
+function CareerDelegationDialog({workspace,busy,onSelect,onClose}:{workspace:NexoCareerWorkspace;busy:boolean;onSelect:(plan:NexoCareerDelegationPlan)=>void;onClose:()=>void}){
+  const [selected,setSelected]=useState<NexoCareerDelegationPlan|null>(null);
+  return <div className="dialog-backdrop"><section className="career-delegation-dialog" role="dialog" aria-modal="true"><header><div><p className="eyebrow">DELEGAR UNA JORNADA</p><h2>Elige qué debe proteger tu segundo entrenador</h2><p>Generará un once válido y lo dejará bloqueado. No podrás usar el mercado ni responder al dilema semanal.</p></div><button onClick={onClose}>×</button></header>{selected?<article className="career-delegation-confirm"><span>2º</span><p className="eyebrow">ANTES DE CONFIRMAR</p><h3>{selected.title}</h3><p>{selected.description}</p><div><b>-{selected.cost.toFixed(2).replace(".",",")} M</b>{selected.confidenceChange>0&&<b>+{selected.confidenceChange} confianza</b>}{selected.failuresReduced>0&&<b>-{selected.failuresReduced} fallo acumulado</b>}{selected.pointsMultiplier&&<b>×{selected.pointsMultiplier.toFixed(2)} puntos de originales</b>}{selected.identityRewardMultiplier&&<b>×{selected.identityRewardMultiplier.toFixed(0)} recompensa de identidad</b>}</div><ul><li>El once se genera y guarda en el servidor.</li><li>No podrás cambiar jugadores, fichar, vender ni elegir una decisión semanal.</li><li>Consume 1 de {workspace.delegation.maximum} usos y activa {workspace.delegation.cooldownMatchdays} jornadas de espera.</li></ul><footer><button disabled={busy} onClick={()=>setSelected(null)}>Volver</button><button disabled={busy||workspace.budget<selected.cost} onClick={()=>onSelect(selected)}>{busy?"Delegando…":workspace.budget<selected.cost?"Saldo insuficiente":"Confirmar delegación"}</button></footer></article>:<><div className="career-delegation-usage"><span><small>USOS DISPONIBLES</small><strong>{workspace.delegation.remaining}/{workspace.delegation.maximum}</strong>{workspace.delegation.bonusUses>0&&<em>+{workspace.delegation.bonusUses} por objetivos</em>}</span><p>Puedes desbloquear hasta dos usos adicionales cumpliendo objetivos importantes. Si terminas sin delegar, obtendrás el logro «Siempre al mando».</p></div><div className="career-delegation-plans">{workspace.delegation.plans.map((plan)=><button key={plan.key} onClick={()=>setSelected(plan)}><span>{plan.key==="close_ranks"?"+":plan.key==="tactical"?"XI":"C"}</span><small>{plan.key==="close_ranks"?"CONTROL DE CRISIS":plan.key==="tactical"?"SEGURIDAD DEPORTIVA":"IDENTIDAD DEL CLUB"}</small><strong>{plan.title}</strong><p>{plan.description}</p><footer><b>{plan.cost.toFixed(2).replace(".",",")} M</b><em>Ver consecuencias →</em></footer></button>)}</div>{!workspace.delegation.eligible&&<p className="career-delegation-blocked">{workspace.delegation.blockingReason}</p>}</>}</section></div>
 }
 
 function CareerRankingPreview({ career, ranking, onOpen }: { career: NexoCareer; ranking: NexoCareerRanking|null; onOpen: () => void }) {
@@ -196,7 +236,18 @@ function CareerMatchdayReportCard({report,onPrepare}:{report:NexoCareerMatchdayR
   </section>;
 }
 
-function CareerOverview({ career, workspace, nextFixture, rules, decision, ranking, busy, onArea, onDecision, onRanking }: { career: NexoCareer; workspace: NexoCareerWorkspace; nextFixture?: MatchFixture; rules: CareerRules; decision?: NexoCareerDecision; ranking: NexoCareerRanking|null; busy: boolean; onArea: (area: Area) => void; onDecision: (choice: NexoCareerDecisionChoice) => void; onRanking: () => void }) {
+function CareerCatalogIncidentCard({ incident, busy, onResolve }: { incident: NexoCareerCatalogIncident; busy: boolean; onResolve: (incident: NexoCareerCatalogIncident, choice: NexoCareerCatalogIncidentChoice) => void }) {
+  const [selected,setSelected]=useState<NexoCareerCatalogIncidentChoice|null>(null);
+  const reason=incident.changeType==="club_exit"?"ha fichado por otro club":incident.changeType==="competition_change"?"ha cambiado de competición":"ha salido de la competición";
+  return <section className="career-catalog-incident">
+    <header><div className="career-incident-player">{incident.photoUrl?<img src={incident.photoUrl} alt=""/>:<span>{incident.initials}</span>}<p><small>CAMBIO REAL EN LA PLANTILLA</small><strong>{incident.playerName}</strong><em>{incident.position} · {reason}</em></p></div><b>DECISIÓN PENDIENTE</b></header>
+    <div className="career-incident-message"><span>!</span><p><strong>El mercado real cambia tu historia</strong><small>Su valor queda congelado en {incident.frozenMarketValue.toFixed(2).replace(".",",")} M. El borrador abierto se ha retirado si lo incluía; las jornadas cerradas permanecen intactas.</small></p></div>
+    {selected?<div className="career-incident-confirm"><p className="eyebrow">ANTES DE CONFIRMAR</p><h3>{selected.title}</h3><p>{selected.summary}</p><div><span><small>PRESUPUESTO</small><strong>+{selected.budgetCredit.toFixed(2).replace(".",",")} M</strong></span><span><small>REPUTACIÓN</small><strong className={selected.reputationChange<0?"negative":""}>{selected.reputationChange>0?"+":""}{selected.reputationChange}</strong></span><span><small>CONFIANZA</small><strong>+{selected.confidenceChange}</strong></span></div><small>Al confirmar, {incident.playerName} saldrá definitivamente de esta Carrera y tendrás que completar de nuevo el once si fuera necesario.</small><footer><button disabled={busy} onClick={()=>setSelected(null)}>Volver</button><button disabled={busy} onClick={()=>onResolve(incident,selected)}>{busy?"Aplicando…":"Confirmar respuesta"}</button></footer></div>
+    :<div className="career-incident-options">{incident.choices.map((choice)=><button key={choice.key} disabled={busy} onClick={()=>setSelected(choice)}><small>{choice.key==="reinvest"?"PLAN DEPORTIVO":"PLAN DE CLUB"}</small><strong>{choice.title}</strong><p>{choice.summary}</p><span><b>+{choice.budgetCredit.toFixed(2).replace(".",",")} M</b><b className={choice.reputationChange<0?"negative":""}>{choice.reputationChange>0?"+":""}{choice.reputationChange} REP</b><b>+{choice.confidenceChange} CONF</b></span><em>Revisar consecuencias →</em></button>)}</div>}
+  </section>;
+}
+
+function CareerOverview({ career, workspace, nextFixture, rules, decision, pendingIncident, ranking, busy, onArea, onDecision, onIncident, onRanking, onDelegate }: { career: NexoCareer; workspace: NexoCareerWorkspace; nextFixture?: MatchFixture; rules: CareerRules; decision?: NexoCareerDecision; pendingIncident?: NexoCareerCatalogIncident; ranking: NexoCareerRanking|null; busy: boolean; onArea: (area: Area) => void; onDecision: (choice: NexoCareerDecisionChoice) => void; onIncident: (incident: NexoCareerCatalogIncident, choice: NexoCareerCatalogIncidentChoice) => void; onRanking: () => void; onDelegate: () => void }) {
   const [pendingChoice,setPendingChoice]=useState<NexoCareerDecisionChoice|null>(null);
   const seasonObjective=workspace.objectives.find((item)=>item.type==="season");
   const matchdayObjective=workspace.objectives.find((item)=>item.type==="matchday"&&item.expiresMatchday===career.matchday);
@@ -231,9 +282,13 @@ function CareerOverview({ career, workspace, nextFixture, rules, decision, ranki
     return `Consigue ${target} puntos con tu once`;
   };
   return <>
-    <article className="career-hero"><div><p className="eyebrow">JORNADA {career.matchday} · {career.difficulty === "elite" ? "ÉLITE" : career.difficulty === "relaxed" ? "CANTERA" : "PROFESIONAL"}</p><h1>Que el club recuerde tu nombre.</h1><p>Conserva su identidad, mejora la plantilla y responde a una directiva que evaluará cada decisión.</p><div><button onClick={() => onArea("lineup")}>Preparar el once →</button><button onClick={() => onArea("market")}>Abrir mercado</button></div></div><section><span>{career.sportsClubName.split(/\s+/).map((word) => word[0]).slice(0,2).join("")}</span><p><small>CONFIANZA DIRECTIVA</small><strong>{workspace.boardConfidence}<i>/100</i></strong></p><div><i style={{width:`${workspace.boardConfidence}%`}} /></div></section></article>
+    <article className="career-hero"><div><p className="eyebrow">JORNADA {career.matchday} · {career.difficulty === "elite" ? "ÉLITE" : career.difficulty === "relaxed" ? "CANTERA" : "PROFESIONAL"}</p><h1>Que el club recuerde tu nombre.</h1><p>Conserva su identidad, mejora la plantilla y responde a una directiva que evaluará cada decisión.</p><div><button onClick={() => onArea("lineup")}>{workspace.delegation.current?"Revisar el once":"Preparar el once"} →</button><button disabled={!!workspace.delegation.current} onClick={() => onArea("market")}>Abrir mercado</button>{rules.delegationEnabled&&!workspace.delegation.current&&<button disabled={!workspace.delegation.eligible} onClick={onDelegate}>Delegar jornada</button>}</div></div><section><span>{career.sportsClubName.split(/\s+/).map((word) => word[0]).slice(0,2).join("")}</span><p><small>CONFIANZA DIRECTIVA</small><strong>{workspace.boardConfidence}<i>/100</i></strong></p><div><i style={{width:`${workspace.boardConfidence}%`}} /></div></section></article>
     <div className="career-kpis"><article><small>PRESUPUESTO</small><strong>{workspace.budget.toFixed(1).replace(".", ",")} M</strong><span>Mercado exclusivo</span></article><article><small>PUNTOS DEPORTIVOS</small><strong>{career.sportingPoints}</strong><span>Temporada actual</span></article><article><small>IDENTIDAD</small><strong>{workspace.squad.filter((item) => item.isOriginal).length}/{workspace.squad.length}</strong><span>Jugadores originales</span></article><article><small>CONTRATO</small><strong>{tierLabel}</strong><span>{career.difficulty === "elite" ? "Máxima exigencia" : career.difficulty === "relaxed" ? "Margen amplio" : "Exigencia equilibrada"}</span></article></div>
+    {workspace.interlude&&<CareerInterludeCard careerId={career.id} interlude={workspace.interlude}/>}
     {latestReport&&<CareerMatchdayReportCard report={latestReport} onPrepare={()=>onArea("lineup")}/>} 
+    {pendingIncident&&<CareerCatalogIncidentCard key={pendingIncident.id} incident={pendingIncident} busy={busy} onResolve={onIncident}/>}
+    {workspace.delegation.current&&<section className="career-delegation-active"><span>2º</span><div><p className="eyebrow">SEGUNDO ENTRENADOR · JORNADA {career.matchday}</p><h2>{workspace.delegation.plans.find((plan)=>plan.key===workspace.delegation.current?.plan)?.title}</h2><p>El servidor ha fijado un {workspace.delegation.current.formation}. Puedes revisar el once, pero no editarlo, operar en el mercado ni tomar la decisión semanal.</p></div><button onClick={()=>onArea("lineup")}>Revisar once →</button></section>}
+    {!workspace.delegation.current&&workspace.delegation.recommended&&<section className="career-delegation-recommended"><span>!</span><div><p className="eyebrow">LA DIRECTIVA TE OFRECE APOYO</p><h2>Puede ser un buen momento para delegar</h2><p>{workspace.delegation.recommendationReasons.join(" · ")}</p></div><button disabled={!workspace.delegation.eligible} onClick={onDelegate}>Ver planes →</button></section>}
     <div className="career-main-grid">
       <article className="career-objectives">
         <p className="eyebrow">TU CONTRATO · {tierLabel.toUpperCase()}</p>
@@ -250,7 +305,8 @@ function CareerOverview({ career, workspace, nextFixture, rules, decision, ranki
       </article>
       <article className="career-decision">
         <p className="eyebrow">DECISIÓN DE LA JORNADA</p><h2>{workspace.decisionPrompt?.title??"Sin dilema pendiente"}</h2><p>{workspace.decisionPrompt?.description??"La directiva no ha planteado una decisión para esta jornada."}</p>
-        {decision ? <div className="career-decision-result"><span>✓</span><strong>{decision.choiceTitle}</strong><small>{decision.consequence}</small><div className="career-effect-pills"><b>{formatSigned(decision.reputationChange," REP")}</b><b>{formatSigned(decision.confidenceChange," CONF")}</b><b>{formatSigned(decision.budgetChange," M")}</b>{decision.sportingPointsChange!==0&&<b>{formatSigned(decision.sportingPointsChange," pts")}</b>}{decision.conditionalOriginalTarget&&<b>+{decision.conditionalSportingBonus} pts si alineas {decision.conditionalOriginalTarget} originales</b>}</div></div>
+        {workspace.delegation.current?<div className="career-decision-result"><span>2º</span><strong>Decide el segundo entrenador</strong><small>Al delegar renuncias al dilema semanal. El plan elegido ocupa su lugar durante esta jornada.</small></div>
+        : decision ? <div className="career-decision-result"><span>✓</span><strong>{decision.choiceTitle}</strong><small>{decision.consequence}</small><div className="career-effect-pills"><b>{formatSigned(decision.reputationChange," REP")}</b><b>{formatSigned(decision.confidenceChange," CONF")}</b><b>{formatSigned(decision.budgetChange," M")}</b>{decision.sportingPointsChange!==0&&<b>{formatSigned(decision.sportingPointsChange," pts")}</b>}{decision.conditionalOriginalTarget&&<b>+{decision.conditionalSportingBonus} pts si alineas {decision.conditionalOriginalTarget} originales</b>}</div></div>
         : pendingChoice ? <div className="career-decision-confirm"><p className="eyebrow">ANTES DE CONFIRMAR</p><h3>{pendingChoice.title}</h3><span>{pendingChoice.summary}</span><div className="career-effect-list"><p><b>Ocurre ahora</b><strong>{immediateEffects(pendingChoice)}</strong></p><p><b>Al cerrar la jornada</b><strong>{closingEffects(pendingChoice)}</strong></p></div><small>Después de confirmar no podrás cambiar esta decisión durante la Jornada {career.matchday}.</small><footer><button disabled={busy} onClick={()=>setPendingChoice(null)}>Volver</button><button disabled={busy} onClick={()=>onDecision(pendingChoice)}>{busy?"Confirmando…":"Confirmar decisión"}</button></footer></div>
         : rules.weeklyDecisionEnabled&&workspace.decisionPrompt ? <div className="career-decision-options">{workspace.decisionPrompt.choices.map((choice)=><button disabled={busy} key={choice.key} onClick={()=>setPendingChoice(choice)}><strong>{choice.title}</strong><small>{choice.summary}</small><span className="career-choice-timing"><i><b>OCURRE AHORA</b>{immediateEffects(choice)}</i><i><b>AL CERRAR LA JORNADA</b>{closingEffects(choice)}</i></span><em>Ver y confirmar →</em></button>)}</div>
         : <div className="career-decision-result"><span>—</span><strong>Sin decisión esta jornada</strong><small>Administración ha desactivado los dilemas semanales.</small></div>}
@@ -260,6 +316,22 @@ function CareerOverview({ career, workspace, nextFixture, rules, decision, ranki
     <CareerRankingPreview career={career} ranking={ranking} onOpen={onRanking}/>
     <section className="career-squad-preview"><div className="section-title"><div><p className="eyebrow">PLANTILLA ACTUAL</p><h2>La base de tu proyecto</h2><p>{workspace.squad.length} jugadores, con mercado individual propio.</p></div><button className="text-button" onClick={() => onArea("market")}>Gestionar plantilla →</button></div><div>{workspace.squad.slice(0,6).map((player)=><article key={player.id}><Avatar player={player}/><p><strong>{player.name}</strong><small>{player.position} · {player.value.toFixed(1).replace(".",",")} M</small></p><b>{player.isOriginal ? "ORIGINAL" : "FICHAJE"}</b></article>)}</div></section>
   </>;
+}
+
+function CareerInterludeCard({careerId,interlude}:{careerId:string;interlude:NexoCareerInterlude}){
+  const [selected,setSelected]=useState<NexoCareerInterludeChoice|null>(null);
+  const [saving,setSaving]=useState(false);
+  const [decision,setDecision]=useState(interlude.decision);
+  const remaining=Math.max(0,new Date(interlude.endsAt).getTime()-Date.now());
+  const days=Math.floor(remaining/86400000);const hours=Math.floor((remaining%86400000)/3600000);
+  async function confirm(choice:NexoCareerInterludeChoice){setSaving(true);try{await saveNexoCareerInterludeDecision(careerId,interlude.id,choice.key);setDecision({plan:choice.key,title:choice.title,consequence:`${choice.immediate}. ${choice.returnEffect}.`,confidenceChange:choice.confidenceChange,reputationChange:choice.reputationChange,budgetChange:choice.budgetChange,failuresReduced:choice.key==="recovery"?1:0,nextEffect:choice.key==="tactical"?{type:"failure_protection"}:choice.key==="academy"?{type:"academy_reputation"}:{},decidedAt:new Date().toISOString()});setSelected(null)}finally{setSaving(false)}}
+  if(interlude.status==="cancelled")return null;
+  return <section className={`career-interlude ${interlude.status}`}><header><span>II</span><div><p className="eyebrow">INTERLUDIO DE TEMPORADA · ENTRE J{interlude.fromMatchday} Y J{interlude.toMatchday}</p><h2>{interlude.title}</h2><p>El calendario deja {interlude.gapDays} días sin jornada. Mercado, once e historial siguen disponibles y esta elección no consume jornada ni delegación.</p></div><aside><small>REGRESO</small><strong>{days}d {hours}h</strong><em>{new Date(interlude.endsAt).toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</em></aside></header>
+    {interlude.status==="pending"?<div className="career-interlude-pending"><b>Esperando confirmación</b><span>Administración revisará el calendario antes de activar las decisiones.</span></div>
+    :decision?<article className="career-interlude-result"><span>✓</span><div><small>PLAN CONFIRMADO</small><strong>{decision.title}</strong><p>{decision.consequence}</p></div><aside>{decision.confidenceChange!==0&&<b>{decision.confidenceChange>0?"+":""}{decision.confidenceChange} confianza</b>}{decision.budgetChange!==0&&<b>{decision.budgetChange>0?"+":""}{decision.budgetChange.toFixed(2).replace(".",",")} M</b>}{Object.keys(decision.nextEffect).length>0&&<b>Efecto preparado para la J{interlude.toMatchday}</b>}</aside></article>
+    :selected?<article className="career-interlude-confirm"><div><small>ANTES DE CONFIRMAR</small><h3>{selected.title}</h3><p>{selected.summary}</p></div><section><p><b>Ocurre ahora</b><span>{selected.immediate}</span></p><p><b>Al regresar en la J{interlude.toMatchday}</b><span>{selected.returnEffect}</span></p></section><footer><button disabled={saving} onClick={()=>setSelected(null)}>Volver</button><button disabled={saving} onClick={()=>void confirm(selected)}>{saving?"Confirmando…":"Elegir este plan"}</button></footer></article>
+    :<div className="career-interlude-options">{interlude.choices.map((choice)=><button key={choice.key} disabled={!interlude.canDecide||saving} onClick={()=>setSelected(choice)}><small>{choice.key==="recovery"?"VESTUARIO":choice.key==="tactical"?"PREPARACIÓN":choice.key==="academy"?"IDENTIDAD":"RECURSOS"}</small><strong>{choice.title}</strong><p>{choice.summary}</p><span><b>AHORA</b>{choice.immediate}</span><span><b>REGRESO</b>{choice.returnEffect}</span><em>Ver consecuencias →</em></button>)}</div>}
+  </section>;
 }
 
 function CareerLineupHistory({ career, workspace, rules, draft, selectedMatchday, catalog, onSelectMatchday, onDraftChange, onSave, notify }: { career: NexoCareer; workspace: NexoCareerWorkspace; rules: CareerRules; draft: NexoCareerLineup | null; selectedMatchday: number; catalog: CompetitionPlayer[]; onSelectMatchday: (matchday: number) => void; onDraftChange: (lineup: NexoCareerLineup) => void; onSave: (lineup: NexoCareerLineup) => Promise<void>; notify: (value: string) => void }) {
@@ -272,9 +344,14 @@ function CareerLineupHistory({ career, workspace, rules, draft, selectedMatchday
   return <section className="career-lineup-history">
     <header><div><p className="eyebrow">ALINEACIONES DE LA TEMPORADA</p><h2>Consulta cada jornada</h2><p>La jornada actual se puede editar. Las anteriores conservan exactamente el once que utilizaste para puntuar.</p></div><nav aria-label="Jornadas de la Carrera">{matchdays.map((matchday) => <button className={selectedMatchday === matchday ? "active" : ""} key={matchday} onClick={() => onSelectMatchday(matchday)}><strong>J{matchday}</strong><small>{statusFor(matchday)}</small></button>)}</nav></header>
     {selectedMatchday === career.matchday
-      ? <LineupEditor career={career} workspace={workspace} rules={rules} draft={draft} onDraftChange={onDraftChange} onSave={onSave} notify={notify} />
+      ? workspace.delegation.current?<DelegatedCareerLineup career={career} workspace={workspace}/>:<LineupEditor career={career} workspace={workspace} rules={rules} draft={draft} onDraftChange={onDraftChange} onSave={onSave} notify={notify} />
       : <HistoricalCareerLineup career={career} workspace={workspace} matchday={selectedMatchday} catalog={catalog} onCurrent={() => onSelectMatchday(career.matchday)} />}
   </section>;
+}
+
+function DelegatedCareerLineup({career,workspace}:{career:NexoCareer;workspace:NexoCareerWorkspace}){
+  const delegation=workspace.delegation.current!;const plan=workspace.delegation.plans.find((item)=>item.key===delegation.plan);const selected=workspace.squad.filter((player)=>delegation.playerIds.includes(player.id));
+  return <section className="career-delegated-lineup"><header><div><p className="eyebrow">JORNADA {career.matchday} · ONCE DELEGADO</p><h2>{plan?.title}</h2><p>El segundo entrenador ha cerrado este once. Puedes revisarlo, pero cualquier cambio, fichaje o venta queda bloqueado hasta la próxima jornada.</p></div><span>{delegation.formation}</span></header><div className="football-pitch league-detail-pitch fantasy-draft-pitch"><div className="field-line center-line"/><div className="field-line center-circle"/>{(["DEL","MED","DEF","POR"] as PlayerPosition[]).map((position)=><div className="player-row" key={position}>{selected.filter((player)=>player.position===position).map((player)=><div className="pitch-player lineup-player historical" key={player.id}><Avatar player={player}/><strong>{player.name}</strong><small>{player.id===delegation.captainId?"Capitán":player.id===delegation.viceCaptainId?"Vicecapitán":player.isOriginal?"Original":"Fichaje"}</small></div>)}</div>)}</div><footer><span><b>{workspace.delegation.remaining}</b> delegaciones restantes</span><span>Próximo uso: J{workspace.delegation.nextAvailableMatchday}</span><strong>Coste aplicado: {delegation.cost.toFixed(2).replace(".",",")} M</strong></footer></section>
 }
 
 function HistoricalCareerLineup({ career, workspace, matchday, catalog, onCurrent }: { career: NexoCareer; workspace: NexoCareerWorkspace; matchday: number; catalog: CompetitionPlayer[]; onCurrent: () => void }) {

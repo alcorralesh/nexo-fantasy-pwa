@@ -46,6 +46,33 @@ export type NexoCareerRules = {
   relaxedTargetMultiplier: number;
   balancedTargetMultiplier: number;
   eliteTargetMultiplier: number;
+  catalogIncidentsEnabled: boolean;
+  exitReinvestPercent: number;
+  exitIdentityPercent: number;
+  delegationEnabled: boolean;
+  delegationMaxUses: number;
+  delegationCooldownMatchdays: number;
+  delegationWarningMargin: number;
+  delegationCloseRanksCost: number;
+  delegationTacticalCost: number;
+  delegationAcademyCost: number;
+  delegationCloseRanksConfidence: number;
+  delegationAcademyPointsMultiplier: number;
+  delegationIdentityRewardMultiplier: number;
+  delegationMaxBonusUses: number;
+  delegationUnlocksEnabled: boolean;
+  delegationUnusedRewardThreshold: number;
+  delegationUnusedRewardCoins: number;
+  delegationNeverUsedRewardCoins: number;
+  delegationNeverUsedReputation: number;
+  interludeEnabled: boolean;
+  interludeThresholdDays: number;
+  interludeAutoActivate: boolean;
+  interludeRecoveryConfidence: number;
+  interludeTacticalProtectionPercent: number;
+  interludeAcademyReputation: number;
+  interludeCommercialBudget: number;
+  interludeCommercialConfidenceCost: number;
 };
 
 export type NexoCareerPlayer = {
@@ -60,17 +87,28 @@ export type NexoCareerPlayer = {
   acquisitionValue: number;
 };
 
-export type NexoCareerLineup = { matchday: number; formation: string; captainId: string; playerIds: string[]; savedAt: string; lockedAt?: string; points?: number };
+export type NexoCareerLineup = { matchday: number; formation: string; captainId: string; viceCaptainId?: string; playerIds: string[]; savedAt: string; lockedAt?: string; points?: number; delegated?: boolean };
 export type NexoCareerDecision = { matchday: number; decisionKey: string; choiceKey: string; choiceTitle: string; consequence: string; reputationChange: number; confidenceChange: number; budgetChange: number; sportingPointsChange: number; conditionalOriginalTarget?: number; conditionalSportingBonus: number; decidedAt: string };
 export type NexoCareerObjective = { id: string; type: "identity" | "matchday" | "season" | "confidence"; title: string; description: string; targetValue: number; currentValue: number; reputationReward: number; failurePenalty: number; status: "active" | "completed" | "failed"; expiresMatchday?: number; metricKey?: "points" | "originals" | "captain_points" | "new_signings" | "budget_floor" };
 export type NexoCareerDecisionChoice = { key: string; title: string; summary: string; reputationChange: number; confidenceChange: number; budgetChange: number; sportingPointsChange: number; condition?: string; conditionalBonus: number };
 export type NexoCareerDecisionPrompt = { key: string; title: string; description: string; choices: NexoCareerDecisionChoice[] };
 export type NexoCareerEvent = { type: string; title: string; detail: string; matchday?: number; reputationChange: number; createdAt: string };
+export type NexoCareerCatalogIncidentChoice = { key: "reinvest" | "identity"; title: string; summary: string; budgetCredit: number; reputationChange: number; confidenceChange: number };
+export type NexoCareerCatalogIncident = { id: string; playerId: string; playerName: string; initials: string; position: NexoCareerPlayer["position"]; photoUrl?: string; changeType: "club_exit" | "competition_exit" | "competition_change"; previousClubId?: string; currentClubId?: string; frozenMarketValue: number; status: "pending" | "resolving" | "resolved" | "cancelled"; resolutionChoice?: "reinvest" | "identity"; budgetCredit?: number; reputationChange?: number; confidenceChange?: number; createdAt: string; resolvedAt?: string; choices: NexoCareerCatalogIncidentChoice[] };
+export type NexoCareerDelegationPlanKey = "close_ranks" | "tactical" | "academy";
+export type NexoCareerDelegationPlan = { key: NexoCareerDelegationPlanKey; title: string; description: string; cost: number; confidenceChange: number; failuresReduced: number; pointsMultiplier?: number; identityRewardMultiplier?: number };
+export type NexoCareerDelegation = { id: string; matchday: number; plan: NexoCareerDelegationPlanKey; status: "scheduled" | "settled" | "cancelled"; cost: number; confidenceChange: number; failuresReduced: number; formation: string; captainId: string; viceCaptainId?: string; playerIds: string[]; fallbackPlayerIds: string[]; createdAt: string };
+export type NexoCareerDelegationState = { enabled: boolean; eligible: boolean; blockingReason?: string; used: number; baseMaximum: number; bonusUses: number; maximum: number; remaining: number; cooldownMatchdays: number; nextAvailableMatchday: number; recommended: boolean; recommendationReasons: string[]; current?: NexoCareerDelegation; plans: NexoCareerDelegationPlan[] };
+export type NexoCareerInterludeChoice = { key: "recovery" | "tactical" | "academy" | "commercial"; title: string; summary: string; immediate: string; returnEffect: string; confidenceChange: number; reputationChange: number; budgetChange: number };
+export type NexoCareerInterludeDecision = { plan: NexoCareerInterludeChoice["key"]; title: string; consequence: string; confidenceChange: number; reputationChange: number; budgetChange: number; failuresReduced: number; nextEffect: Record<string,unknown>; decidedAt: string; appliedAt?: string };
+export type NexoCareerInterlude = { id: string; title: string; status: "pending" | "active" | "cancelled" | "completed"; fromMatchday: number; toMatchday: number; startsAt: string; endsAt: string; gapDays: number; canDecide: boolean; decision?: NexoCareerInterludeDecision; choices: NexoCareerInterludeChoice[] };
+export type NexoCareerAdminInterlude = Omit<NexoCareerInterlude,"canDecide"|"decision"|"choices"> & { competitionId: string; season: string; decisionCount: number };
+export type NexoProfileAchievement = { key: string; title: string; description: string; rarity: string; coinReward: number; unlockedAt: string; rewardClaimedAt?: string };
 export type NexoCareerReportPlayer = { playerId: string; name: string; initials: string; position: NexoCareerPlayer["position"]; photoUrl?: string; isCaptain: boolean; basePoints: number; multiplier: number; finalPoints: number };
 export type NexoCareerReportMission = { id: string; title: string; description: string; metricKey?: string; targetValue: number; currentValue: number; status: "completed" | "failed"; reward: number; penalty: number };
 export type NexoCareerReportDecision = { choiceTitle: string; consequence: string; reputationChange: number; confidenceChange: number; budgetChange: number; sportingPointsChange: number; conditionalOriginalTarget?: number; conditionalSportingBonus: number; conditionMet: boolean };
 export type NexoCareerMatchdayReport = { matchday: number; formation?: string; captainId?: string; players: NexoCareerReportPlayer[]; lineupPoints: number; decisionPoints: number; totalPoints: number; mission?: NexoCareerReportMission; decision?: NexoCareerReportDecision; confidenceBefore: number; confidenceAfter: number; reputationBefore: number; reputationAfter: number; budgetBefore: number; budgetAfter: number; consecutiveFailuresAfter: number; statusAfter: NexoCareer["status"]; rankingPosition?: number; previousRankingPosition?: number; createdAt: string; viewedAt?: string };
-export type NexoCareerWorkspace = { budget: number; matchday: number; boardConfidence: number; consecutiveFailures: number; contractTier: "title" | "europe" | "stability"; status: NexoCareer["status"]; squad: NexoCareerPlayer[]; market: NexoCareerPlayer[]; lineups: NexoCareerLineup[]; decisions: NexoCareerDecision[]; objectives: NexoCareerObjective[]; events: NexoCareerEvent[]; reports: NexoCareerMatchdayReport[]; decisionPrompt?: NexoCareerDecisionPrompt };
+export type NexoCareerWorkspace = { budget: number; matchday: number; boardConfidence: number; consecutiveFailures: number; contractTier: "title" | "europe" | "stability"; status: NexoCareer["status"]; squad: NexoCareerPlayer[]; market: NexoCareerPlayer[]; lineups: NexoCareerLineup[]; decisions: NexoCareerDecision[]; objectives: NexoCareerObjective[]; events: NexoCareerEvent[]; incidents: NexoCareerCatalogIncident[]; reports: NexoCareerMatchdayReport[]; delegation: NexoCareerDelegationState; interlude?: NexoCareerInterlude; decisionPrompt?: NexoCareerDecisionPrompt };
 export type NexoCareerContentItem = { key: string; title: string; kind: "event" | "mission"; category?: string; metricKey?: string; active: boolean; weight: number; cooldown: number; storyKey?: string; storyStep?: number; target?: number; reward?: number; penalty?: number };
 export type NexoCareerRankingRow = { careerId: string; position: number; managerName: string; initials: string; status: NexoCareer["status"]; totalPoints: number; averagePoints: number; bestMatchday: number; reputation: number; confidence: number; completedObjectives: number; budget: number; isCurrent: boolean };
 export type NexoCareerRanking = { enabled: boolean; completedMatchdays: number; totalManagers: number; rows: NexoCareerRankingRow[] };
@@ -130,7 +168,7 @@ export async function createNexoCareer(input: { clubId: string; sportsClubId: st
 }
 
 export async function loadNexoCareerRules(): Promise<NexoCareerRules> {
-  const { data, error } = await requireClient().from("manager_career_rules").select("enabled,free_careers_per_competition,extra_career_coin_cost,initial_budget,minimum_original_squad,minimum_original_lineup,weekly_decision_enabled,same_club_ranking_enabled,academy_decision_cost,failure_confidence_penalty,dismissal_confidence_threshold,relaxed_target_multiplier,balanced_target_multiplier,elite_target_multiplier").single();
+  const { data, error } = await requireClient().from("manager_career_rules").select("enabled,free_careers_per_competition,extra_career_coin_cost,initial_budget,minimum_original_squad,minimum_original_lineup,weekly_decision_enabled,same_club_ranking_enabled,academy_decision_cost,failure_confidence_penalty,dismissal_confidence_threshold,relaxed_target_multiplier,balanced_target_multiplier,elite_target_multiplier,catalog_incidents_enabled,exit_reinvest_percent,exit_identity_percent,delegation_enabled,delegation_max_uses,delegation_cooldown_matchdays,delegation_warning_margin,delegation_close_ranks_cost,delegation_tactical_cost,delegation_academy_cost,delegation_close_ranks_confidence,delegation_academy_points_multiplier,delegation_identity_reward_multiplier,delegation_max_bonus_uses,delegation_unlocks_enabled,delegation_unused_reward_threshold,delegation_unused_reward_coins,delegation_never_used_reward_coins,delegation_never_used_reputation,interlude_enabled,interlude_threshold_days,interlude_auto_activate,interlude_recovery_confidence,interlude_tactical_protection_percent,interlude_academy_reputation,interlude_commercial_budget,interlude_commercial_confidence_cost").single();
   if (error) throw new Error(error.message);
   return {
     enabled: data.enabled,
@@ -147,6 +185,33 @@ export async function loadNexoCareerRules(): Promise<NexoCareerRules> {
     relaxedTargetMultiplier: Number(data.relaxed_target_multiplier),
     balancedTargetMultiplier: Number(data.balanced_target_multiplier),
     eliteTargetMultiplier: Number(data.elite_target_multiplier),
+    catalogIncidentsEnabled: data.catalog_incidents_enabled !== false,
+    exitReinvestPercent: Number(data.exit_reinvest_percent ?? 100),
+    exitIdentityPercent: Number(data.exit_identity_percent ?? 85),
+    delegationEnabled: data.delegation_enabled !== false,
+    delegationMaxUses: Number(data.delegation_max_uses ?? 5),
+    delegationCooldownMatchdays: Number(data.delegation_cooldown_matchdays ?? 3),
+    delegationWarningMargin: Number(data.delegation_warning_margin ?? 10),
+    delegationCloseRanksCost: Number(data.delegation_close_ranks_cost ?? 0.5),
+    delegationTacticalCost: Number(data.delegation_tactical_cost ?? 0.5),
+    delegationAcademyCost: Number(data.delegation_academy_cost ?? 0.75),
+    delegationCloseRanksConfidence: Number(data.delegation_close_ranks_confidence ?? 6),
+    delegationAcademyPointsMultiplier: Number(data.delegation_academy_points_multiplier ?? 1.1),
+    delegationIdentityRewardMultiplier: Number(data.delegation_identity_reward_multiplier ?? 2),
+    delegationMaxBonusUses: Number(data.delegation_max_bonus_uses ?? 2),
+    delegationUnlocksEnabled: data.delegation_unlocks_enabled !== false,
+    delegationUnusedRewardThreshold: Number(data.delegation_unused_reward_threshold ?? 3),
+    delegationUnusedRewardCoins: Number(data.delegation_unused_reward_coins ?? 100),
+    delegationNeverUsedRewardCoins: Number(data.delegation_never_used_reward_coins ?? 300),
+    delegationNeverUsedReputation: Number(data.delegation_never_used_reputation ?? 10),
+    interludeEnabled: data.interlude_enabled !== false,
+    interludeThresholdDays: Number(data.interlude_threshold_days ?? 10),
+    interludeAutoActivate: data.interlude_auto_activate !== false,
+    interludeRecoveryConfidence: Number(data.interlude_recovery_confidence ?? 5),
+    interludeTacticalProtectionPercent: Number(data.interlude_tactical_protection_percent ?? 50),
+    interludeAcademyReputation: Number(data.interlude_academy_reputation ?? 4),
+    interludeCommercialBudget: Number(data.interlude_commercial_budget ?? 1.5),
+    interludeCommercialConfidenceCost: Number(data.interlude_commercial_confidence_cost ?? 3),
   };
 }
 
@@ -166,6 +231,33 @@ export async function saveNexoCareerRules(rules: NexoCareerRules): Promise<void>
     next_relaxed_multiplier: rules.relaxedTargetMultiplier,
     next_balanced_multiplier: rules.balancedTargetMultiplier,
     next_elite_multiplier: rules.eliteTargetMultiplier,
+    next_catalog_incidents_enabled: rules.catalogIncidentsEnabled,
+    next_exit_reinvest_percent: rules.exitReinvestPercent,
+    next_exit_identity_percent: rules.exitIdentityPercent,
+    next_delegation_enabled: rules.delegationEnabled,
+    next_delegation_max_uses: rules.delegationMaxUses,
+    next_delegation_cooldown: rules.delegationCooldownMatchdays,
+    next_delegation_warning_margin: rules.delegationWarningMargin,
+    next_delegation_close_ranks_cost: rules.delegationCloseRanksCost,
+    next_delegation_tactical_cost: rules.delegationTacticalCost,
+    next_delegation_academy_cost: rules.delegationAcademyCost,
+    next_delegation_close_ranks_confidence: rules.delegationCloseRanksConfidence,
+    next_delegation_academy_multiplier: rules.delegationAcademyPointsMultiplier,
+    next_delegation_identity_multiplier: rules.delegationIdentityRewardMultiplier,
+    next_delegation_max_bonus_uses: rules.delegationMaxBonusUses,
+    next_delegation_unlocks_enabled: rules.delegationUnlocksEnabled,
+    next_delegation_unused_reward_threshold: rules.delegationUnusedRewardThreshold,
+    next_delegation_unused_reward_coins: rules.delegationUnusedRewardCoins,
+    next_delegation_never_used_reward_coins: rules.delegationNeverUsedRewardCoins,
+    next_delegation_never_used_reputation: rules.delegationNeverUsedReputation,
+    next_interlude_enabled: rules.interludeEnabled,
+    next_interlude_threshold_days: rules.interludeThresholdDays,
+    next_interlude_auto_activate: rules.interludeAutoActivate,
+    next_interlude_recovery_confidence: rules.interludeRecoveryConfidence,
+    next_interlude_tactical_protection_percent: rules.interludeTacticalProtectionPercent,
+    next_interlude_academy_reputation: rules.interludeAcademyReputation,
+    next_interlude_commercial_budget: rules.interludeCommercialBudget,
+    next_interlude_commercial_confidence_cost: rules.interludeCommercialConfidenceCost,
   });
   if (error) throw new Error(error.message);
 }
@@ -212,22 +304,35 @@ function mapCareerPlayer(row: Record<string, unknown>, owned: boolean): NexoCare
 
 export async function loadNexoCareerWorkspace(careerId: string): Promise<NexoCareerWorkspace> {
   const client=requireClient();
-  const [{ data, error },{data:reportData,error:reportError}] = await Promise.all([
+  const [{ data, error },{data:reportData,error:reportError},{data:incidentData,error:incidentError},{data:delegationData,error:delegationError},{data:interludeData,error:interludeError}] = await Promise.all([
     client.rpc("manager_career_workspace", { target_career_id: careerId }),
     client.rpc("manager_career_matchday_reports", { target_career_id: careerId }),
+    client.rpc("manager_career_catalog_incidents", { target_career_id: careerId }),
+    client.rpc("manager_career_delegation_state", { target_career_id: careerId }),
+    client.rpc("manager_career_interlude_state", { target_career_id: careerId }),
   ]);
   if (error) throw new Error(error.message);
   if (reportError) throw new Error(reportError.message);
+  if (incidentError) throw new Error(incidentError.message);
+  if (delegationError) throw new Error(delegationError.message);
+  if (interludeError) throw new Error(interludeError.message);
   const result = (data ?? {}) as Record<string, unknown>;
   const career = (result.career ?? {}) as Record<string, unknown>;
   return {
     budget: Number(career.budget ?? 0), matchday: Number(career.matchday ?? 1), boardConfidence: Number(career.boardConfidence ?? 60), consecutiveFailures: Number(career.consecutiveFailures ?? 0), contractTier: (career.contractTier as NexoCareerWorkspace["contractTier"]) ?? "stability", status: (career.status as NexoCareer["status"]) ?? "active",
     squad: ((result.squad ?? []) as Record<string, unknown>[]).map((row) => mapCareerPlayer(row, true)),
     market: ((result.market ?? []) as Record<string, unknown>[]).map((row) => mapCareerPlayer(row, false)),
-    lineups: ((result.lineups ?? []) as Record<string, unknown>[]).map((row) => ({ matchday: Number(row.matchday), formation: String(row.formation), captainId: String(row.captainId), playerIds: (row.playerIds ?? []) as string[], savedAt: String(row.savedAt), lockedAt: row.lockedAt ? String(row.lockedAt) : undefined, points: row.points == null ? undefined : Number(row.points) })),
+    lineups: ((result.lineups ?? []) as Record<string, unknown>[]).map((row) => ({ matchday: Number(row.matchday), formation: String(row.formation), captainId: String(row.captainId), viceCaptainId: row.viceCaptainId ? String(row.viceCaptainId) : undefined, playerIds: (row.playerIds ?? []) as string[], savedAt: String(row.savedAt), lockedAt: row.lockedAt ? String(row.lockedAt) : undefined, points: row.points == null ? undefined : Number(row.points), delegated: Boolean(row.delegated) })),
     decisions: ((result.decisions ?? []) as Record<string, unknown>[]).map((row) => ({ matchday: Number(row.matchday), decisionKey: String(row.decisionKey), choiceKey: String(row.choiceKey), choiceTitle: String(row.choiceTitle), consequence: String(row.consequence), reputationChange: Number(row.reputationChange), confidenceChange: Number(row.confidenceChange ?? row.reputationChange), budgetChange: Number(row.budgetChange), sportingPointsChange: Number(row.sportingPointsChange), conditionalOriginalTarget: row.conditionalOriginalTarget == null ? undefined : Number(row.conditionalOriginalTarget), conditionalSportingBonus: Number(row.conditionalSportingBonus), decidedAt: String(row.decidedAt) })),
     objectives: ((result.objectives ?? []) as Record<string, unknown>[]).map((row) => ({ id: String(row.id), type: row.type as NexoCareerObjective["type"], title: String(row.title), description: String(row.description), targetValue: Number(row.targetValue), currentValue: Number(row.currentValue), reputationReward: Number(row.reputationReward), failurePenalty: Number(row.failurePenalty), status: row.status as NexoCareerObjective["status"], expiresMatchday: row.expiresMatchday == null ? undefined : Number(row.expiresMatchday), metricKey: row.metricKey as NexoCareerObjective["metricKey"] })),
     events: ((result.events ?? []) as Record<string, unknown>[]).map((row) => ({ type: String(row.type), title: String(row.title), detail: String(row.detail), matchday: row.matchday == null ? undefined : Number(row.matchday), reputationChange: Number(row.reputationChange ?? 0), createdAt: String(row.createdAt) })),
+    incidents: ((incidentData ?? []) as Record<string,unknown>[]).map((row)=>({
+      id:String(row.id),playerId:String(row.playerId),playerName:String(row.playerName),initials:String(row.initials),position:row.position as NexoCareerPlayer["position"],photoUrl:row.photoUrl?String(row.photoUrl):undefined,
+      changeType:row.changeType as NexoCareerCatalogIncident["changeType"],previousClubId:row.previousClubId?String(row.previousClubId):undefined,currentClubId:row.currentClubId?String(row.currentClubId):undefined,
+      frozenMarketValue:Number(row.frozenMarketValue),status:row.status as NexoCareerCatalogIncident["status"],resolutionChoice:row.resolutionChoice as NexoCareerCatalogIncident["resolutionChoice"],budgetCredit:row.budgetCredit==null?undefined:Number(row.budgetCredit),
+      reputationChange:row.reputationChange==null?undefined:Number(row.reputationChange),confidenceChange:row.confidenceChange==null?undefined:Number(row.confidenceChange),createdAt:String(row.createdAt),resolvedAt:row.resolvedAt?String(row.resolvedAt):undefined,
+      choices:((row.choices??[]) as Record<string,unknown>[]).map((choice)=>({key:choice.key as NexoCareerCatalogIncidentChoice["key"],title:String(choice.title),summary:String(choice.summary),budgetCredit:Number(choice.budgetCredit),reputationChange:Number(choice.reputationChange),confidenceChange:Number(choice.confidenceChange)})),
+    })),
     reports: ((reportData ?? []) as Record<string,unknown>[]).map((row)=>({
       matchday:Number(row.matchday),formation:row.formation?String(row.formation):undefined,captainId:row.captainId?String(row.captainId):undefined,
       players:((row.players??[]) as Record<string,unknown>[]).map((player)=>({playerId:String(player.playerId),name:String(player.name),initials:String(player.initials),position:player.position as NexoCareerPlayer["position"],photoUrl:player.photoUrl?String(player.photoUrl):undefined,isCaptain:Boolean(player.isCaptain),basePoints:Number(player.basePoints),multiplier:Number(player.multiplier),finalPoints:Number(player.finalPoints)})),
@@ -235,8 +340,53 @@ export async function loadNexoCareerWorkspace(careerId: string): Promise<NexoCar
       mission:row.mission?(row.mission as NexoCareerReportMission):undefined,decision:row.decision?(row.decision as NexoCareerReportDecision):undefined,
       confidenceBefore:Number(row.confidenceBefore),confidenceAfter:Number(row.confidenceAfter),reputationBefore:Number(row.reputationBefore),reputationAfter:Number(row.reputationAfter),budgetBefore:Number(row.budgetBefore),budgetAfter:Number(row.budgetAfter),consecutiveFailuresAfter:Number(row.consecutiveFailuresAfter),statusAfter:row.statusAfter as NexoCareer["status"],rankingPosition:row.rankingPosition==null?undefined:Number(row.rankingPosition),previousRankingPosition:row.previousRankingPosition==null?undefined:Number(row.previousRankingPosition),createdAt:String(row.createdAt),viewedAt:row.viewedAt?String(row.viewedAt):undefined,
     })),
+    delegation: mapDelegationState((delegationData ?? {}) as Record<string,unknown>),
+    interlude: interludeData ? mapInterludeState(interludeData as Record<string,unknown>) : undefined,
     decisionPrompt: result.decisionPrompt ? result.decisionPrompt as NexoCareerDecisionPrompt : undefined,
   };
+}
+
+function mapInterludeState(row: Record<string,unknown>): NexoCareerInterlude {
+  const decision=row.decision as Record<string,unknown>|null|undefined;
+  return {id:String(row.id),title:String(row.title),status:row.status as NexoCareerInterlude["status"],fromMatchday:Number(row.fromMatchday),toMatchday:Number(row.toMatchday),startsAt:String(row.startsAt),endsAt:String(row.endsAt),gapDays:Number(row.gapDays),canDecide:Boolean(row.canDecide),decision:decision?{plan:decision.plan as NexoCareerInterludeChoice["key"],title:String(decision.title),consequence:String(decision.consequence),confidenceChange:Number(decision.confidenceChange),reputationChange:Number(decision.reputationChange),budgetChange:Number(decision.budgetChange),failuresReduced:Number(decision.failuresReduced),nextEffect:(decision.nextEffect??{}) as Record<string,unknown>,decidedAt:String(decision.decidedAt),appliedAt:decision.appliedAt?String(decision.appliedAt):undefined}:undefined,choices:((row.choices??[]) as Record<string,unknown>[]).map((choice)=>({key:choice.key as NexoCareerInterludeChoice["key"],title:String(choice.title),summary:String(choice.summary),immediate:String(choice.immediate),returnEffect:String(choice.returnEffect),confidenceChange:Number(choice.confidenceChange),reputationChange:Number(choice.reputationChange),budgetChange:Number(choice.budgetChange)}))};
+}
+
+function mapDelegationState(row: Record<string,unknown>): NexoCareerDelegationState {
+  const current=row.current as Record<string,unknown>|null|undefined;
+  return {enabled:row.enabled!==false,eligible:Boolean(row.eligible),blockingReason:row.blockingReason?String(row.blockingReason):undefined,used:Number(row.used??0),baseMaximum:Number(row.baseMaximum??row.maximum??5),bonusUses:Number(row.bonusUses??0),maximum:Number(row.maximum??5),remaining:Number(row.remaining??5),cooldownMatchdays:Number(row.cooldownMatchdays??3),nextAvailableMatchday:Number(row.nextAvailableMatchday??1),recommended:Boolean(row.recommended),recommendationReasons:(row.recommendationReasons??[]) as string[],current:current?{id:String(current.id),matchday:Number(current.matchday),plan:current.plan as NexoCareerDelegationPlanKey,status:current.status as NexoCareerDelegation["status"],cost:Number(current.cost),confidenceChange:Number(current.confidenceChange),failuresReduced:Number(current.failuresReduced),formation:String(current.formation),captainId:String(current.captainId),viceCaptainId:current.viceCaptainId?String(current.viceCaptainId):undefined,playerIds:(current.playerIds??[]) as string[],fallbackPlayerIds:(current.fallbackPlayerIds??[]) as string[],createdAt:String(current.createdAt)}:undefined,plans:((row.plans??[]) as Record<string,unknown>[]).map((plan)=>({key:plan.key as NexoCareerDelegationPlanKey,title:String(plan.title),description:String(plan.description),cost:Number(plan.cost),confidenceChange:Number(plan.confidenceChange),failuresReduced:Number(plan.failuresReduced),pointsMultiplier:plan.pointsMultiplier==null?undefined:Number(plan.pointsMultiplier),identityRewardMultiplier:plan.identityRewardMultiplier==null?undefined:Number(plan.identityRewardMultiplier)}))};
+}
+
+export async function loadNexoProfileAchievements():Promise<NexoProfileAchievement[]>{
+  const {data,error}=await requireClient().rpc("my_profile_achievements");
+  if(error) throw new Error(error.message);
+  return ((data??[]) as Record<string,unknown>[]).map((row)=>({key:String(row.achievement_key),title:String(row.title),description:String(row.description),rarity:String(row.rarity),coinReward:Number(row.coin_reward),unlockedAt:String(row.unlocked_at),rewardClaimedAt:row.reward_claimed_at?String(row.reward_claimed_at):undefined}));
+}
+
+export async function loadNexoProfileCoins():Promise<number>{
+  const {data,error}=await requireClient().from("profiles").select("coins").single();
+  if(error) throw new Error(error.message);
+  return Number(data.coins);
+}
+
+export async function delegateNexoCareerMatchday(careerId:string,plan:NexoCareerDelegationPlanKey):Promise<void>{
+  const {error}=await requireClient().rpc("delegate_manager_career_matchday",{target_career_id:careerId,target_plan:plan});
+  if(error)throw new Error(error.message);
+}
+
+export async function saveNexoCareerInterludeDecision(careerId:string,interludeId:string,plan:NexoCareerInterludeChoice["key"]):Promise<void>{
+  const {error}=await requireClient().rpc("save_manager_career_interlude_decision",{target_career_id:careerId,target_interlude_id:interludeId,target_plan:plan});
+  if(error)throw new Error(error.message);
+}
+
+export async function loadNexoCareerAdminInterludes():Promise<NexoCareerAdminInterlude[]>{
+  const {data,error}=await requireClient().rpc("admin_manager_career_interludes");
+  if(error)throw new Error(error.message);
+  return ((data??[]) as Record<string,unknown>[]).map((row)=>({id:String(row.id),competitionId:String(row.competition_id),season:String(row.season),fromMatchday:Number(row.from_matchday),toMatchday:Number(row.to_matchday),startsAt:String(row.starts_at),endsAt:String(row.ends_at),gapDays:Number(row.gap_days),title:String(row.title),status:row.status as NexoCareerInterlude["status"],decisionCount:Number(row.decision_count)}));
+}
+
+export async function updateNexoCareerAdminInterlude(interlude:NexoCareerAdminInterlude):Promise<void>{
+  const {error}=await requireClient().rpc("update_manager_career_interlude",{target_interlude_id:interlude.id,target_status:interlude.status,target_title:interlude.title});
+  if(error)throw new Error(error.message);
 }
 
 export async function markNexoCareerReportViewed(careerId:string,matchday:number):Promise<void>{
@@ -261,5 +411,10 @@ export async function sellNexoCareerPlayer(careerId: string, playerId: string): 
 
 export async function saveNexoCareerDecision(careerId: string, decisionKey: string, choiceKey: string): Promise<void> {
   const { error } = await requireClient().rpc("save_manager_career_decision", { target_career_id: careerId, target_decision_key: decisionKey, target_choice_key: choiceKey });
+  if (error) throw new Error(error.message);
+}
+
+export async function resolveNexoCareerCatalogIncident(incidentId: string, choice: NexoCareerCatalogIncidentChoice["key"]): Promise<void> {
+  const { error } = await requireClient().rpc("resolve_manager_career_catalog_incident", { target_incident_id: incidentId, target_choice: choice });
   if (error) throw new Error(error.message);
 }

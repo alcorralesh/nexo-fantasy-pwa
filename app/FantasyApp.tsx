@@ -19,7 +19,7 @@ import { createNexoChallenge, loadNexoChallenges, snapshotNexoChallenge, updateN
 import { buyNexoPlayerClause, loadNexoLeagueContracts, raiseNexoPlayerClause, sellNexoPlayerImmediately, setNexoPlayerBlindage, type NexoLeagueContracts, type NexoPlayerContract } from "./services/nexo-contracts";
 import { loadNexoNotifications, markAllNexoNotificationsRead, markNexoNotificationRead } from "./services/nexo-notifications";
 import { loadNexoCareerTrends, loadNexoClubActivity, loadNexoCompetitionTrends, type NexoCareerTrend, type NexoClubActivity } from "./services/nexo-dashboard";
-import { createNexoCareer, loadNexoCareerClubs, loadNexoCareerContentCatalog, loadNexoCareerRules, loadNexoCareers, saveNexoCareerContentItem, saveNexoCareerRules, type NexoCareer, type NexoCareerClub, type NexoCareerContentItem, type NexoCareerDifficulty } from "./services/nexo-career";
+import { createNexoCareer, loadNexoCareerAdminInterludes, loadNexoCareerClubs, loadNexoCareerContentCatalog, loadNexoCareerRules, loadNexoCareers, loadNexoProfileAchievements, loadNexoProfileCoins, saveNexoCareerContentItem, saveNexoCareerRules, updateNexoCareerAdminInterlude, type NexoCareer, type NexoCareerAdminInterlude, type NexoCareerClub, type NexoCareerContentItem, type NexoCareerDifficulty } from "./services/nexo-career";
 import { withBasePath } from "./base-path";
 import { ManagerCareerView } from "./components/ManagerCareerView";
 
@@ -64,6 +64,33 @@ type CareerRules = {
   relaxedTargetMultiplier: number;
   balancedTargetMultiplier: number;
   eliteTargetMultiplier: number;
+  catalogIncidentsEnabled: boolean;
+  exitReinvestPercent: number;
+  exitIdentityPercent: number;
+  delegationEnabled: boolean;
+  delegationMaxUses: number;
+  delegationCooldownMatchdays: number;
+  delegationWarningMargin: number;
+  delegationCloseRanksCost: number;
+  delegationTacticalCost: number;
+  delegationAcademyCost: number;
+  delegationCloseRanksConfidence: number;
+  delegationAcademyPointsMultiplier: number;
+  delegationIdentityRewardMultiplier: number;
+  delegationMaxBonusUses: number;
+  delegationUnlocksEnabled: boolean;
+  delegationUnusedRewardThreshold: number;
+  delegationUnusedRewardCoins: number;
+  delegationNeverUsedRewardCoins: number;
+  delegationNeverUsedReputation: number;
+  interludeEnabled: boolean;
+  interludeThresholdDays: number;
+  interludeAutoActivate: boolean;
+  interludeRecoveryConfidence: number;
+  interludeTacticalProtectionPercent: number;
+  interludeAcademyReputation: number;
+  interludeCommercialBudget: number;
+  interludeCommercialConfidenceCost: number;
 };
 type ClubIdentityMeta = {
   motto: string;
@@ -654,6 +681,17 @@ const achievementCatalog: AchievementDefinition[] = [
     target: 8,
     progress: 5,
     coinReward: 125,
+  },
+  {
+    id: "always_in_charge",
+    category: "CompeticiÃ³n",
+    title: "Siempre al mando",
+    description: "Completa una temporada de Carrera sin delegar ninguna jornada.",
+    icon: "M",
+    rarity: "Legendario",
+    target: 1,
+    progress: 0,
+    coinReward: 300,
   },
 ];
 
@@ -1423,6 +1461,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     activateNextFantasyEvents: true,
   });
   const [claimedAchievements, setClaimedAchievements] = useState<string[]>([]);
+  const [backendAchievementKeys, setBackendAchievementKeys] = useState<string[]>([]);
   const [claimedCoinActions, setClaimedCoinActions] = useState<string[]>([]);
   const [coinLedger, setCoinLedger] = useState<CoinLedgerEntry[]>([
     {
@@ -1505,6 +1544,33 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     relaxedTargetMultiplier: 0.85,
     balancedTargetMultiplier: 1,
     eliteTargetMultiplier: 1.12,
+    catalogIncidentsEnabled: true,
+    exitReinvestPercent: 100,
+    exitIdentityPercent: 85,
+    delegationEnabled: true,
+    delegationMaxUses: 5,
+    delegationCooldownMatchdays: 3,
+    delegationWarningMargin: 10,
+    delegationCloseRanksCost: 0.5,
+    delegationTacticalCost: 0.5,
+    delegationAcademyCost: 0.75,
+    delegationCloseRanksConfidence: 6,
+    delegationAcademyPointsMultiplier: 1.1,
+    delegationIdentityRewardMultiplier: 2,
+    delegationMaxBonusUses: 2,
+    delegationUnlocksEnabled: true,
+    delegationUnusedRewardThreshold: 3,
+    delegationUnusedRewardCoins: 100,
+    delegationNeverUsedRewardCoins: 300,
+    delegationNeverUsedReputation: 10,
+    interludeEnabled: true,
+    interludeThresholdDays: 10,
+    interludeAutoActivate: true,
+    interludeRecoveryConfidence: 5,
+    interludeTacticalProtectionPercent: 50,
+    interludeAcademyReputation: 4,
+    interludeCommercialBudget: 1.5,
+    interludeCommercialConfidenceCost: 3,
   });
   const [careers, setCareers] = useState<NexoCareer[]>([]);
   const [careerCreatorOpen, setCareerCreatorOpen] = useState(false);
@@ -1776,6 +1842,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     void refreshBackendChallenges();
     void refreshBackendNotifications();
     void refreshBackendCareers();
+    void refreshBackendAchievements();
     void refreshBackendCareerRules();
   }
 
@@ -1890,6 +1957,18 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       setCareers(await loadNexoCareers());
     } catch {
       /* Carrera se habilitará al aplicar su migración; el modo demo sigue disponible. */
+    }
+  }
+
+  async function refreshBackendAchievements() {
+    try {
+      const [unlocked, currentCoins] = await Promise.all([loadNexoProfileAchievements(), loadNexoProfileCoins()]);
+      const keys = unlocked.map((item) => item.key);
+      setCoins(currentCoins);
+      setBackendAchievementKeys(keys);
+      setClaimedAchievements((current) => [...new Set([...current, ...unlocked.filter((item) => item.rewardClaimedAt).map((item) => item.key)])]);
+    } catch {
+      /* Los logros de Carrera aparecerÃ¡n al aplicar su migraciÃ³n. */
     }
   }
 
@@ -2098,7 +2177,10 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       const destination = notification.targetSection;
       setLeagueAreaSection(destination && ["resumen", "equipo", "mercado", "jornada", "clasificacion"].includes(destination) ? destination as LeagueAreaSection : "resumen");
       navigate("liga");
-    } else if (notification.targetSection === "perfil" || notification.type === "achievement") navigate("perfil");
+    } else if (notification.targetSection === "perfil" || notification.type === "achievement") {
+      if (sessionUser?.id !== "demo_user") await refreshBackendAchievements();
+      navigate("perfil");
+    }
     else navigate("inicio");
   }
 
@@ -3318,7 +3400,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
                 setCompetition(next.defaultCompetition);
                 notify("Preferencias guardadas");
               }}
-              achievements={achievementCatalog}
+              achievements={achievementCatalog.map((item) => backendAchievementKeys.includes(item.id) ? { ...item, progress: item.target } : item)}
               claimedAchievements={claimedAchievements}
               onClaimAchievement={claimAchievement}
               actions={coinActions}
@@ -4331,7 +4413,7 @@ function CompetitionTabs({ value, onChange }: { value: CompetitionName; onChange
   return (
     <div className="competition-tabs" role="tablist" aria-label="Competición">
       {(["Primera", "Segunda", "Liga F"] as CompetitionName[]).map((item) => (
-        <button key={item} className={value === item ? "active" : ""} onClick={() => onChange(item)} role="tab" aria-selected={value === item}>
+        <button type="button" key={item} className={value === item ? "active" : ""} onClick={() => onChange(item)} role="tab" aria-selected={value === item}>
           {item}
         </button>
       ))}
@@ -4612,6 +4694,13 @@ function CreateManagerCareerDialog({ competition, teams, activeTeamId, players, 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const competitionId = selectedCompetition === "Primera" ? "primera" : selectedCompetition === "Segunda" ? "segunda" : "liga_f";
+  function changeCompetition(nextCompetition: CompetitionName) {
+    if (nextCompetition === selectedCompetition) return;
+    setSelectedClubId("");
+    setClubs([]);
+    setError("");
+    setSelectedCompetition(nextCompetition);
+  }
   useEffect(() => {
     let current = true;
     setLoading(true);
@@ -4636,7 +4725,7 @@ function CreateManagerCareerDialog({ competition, teams, activeTeamId, players, 
   }
   return <div className="dialog-backdrop"><section className="team-dialog career-create-dialog" role="dialog" aria-modal="true" aria-labelledby="career-create-title"><div className="dialog-header"><div><p className="eyebrow">NUEVA HISTORIA</p><h2 id="career-create-title">Carrera de mánager</h2><p>Tu mercado y tus decisiones serán completamente individuales.</p></div><button className="dialog-close" onClick={onClose}>×</button></div><form onSubmit={submit}>
     <div className="career-create-steps"><span className="active">1 · Competición</span><span className={selectedClub ? "active" : ""}>2 · Club</span><span className={selectedClub ? "active" : ""}>3 · Exigencia</span></div>
-    <CompetitionTabs value={selectedCompetition} onChange={setSelectedCompetition} />
+    <CompetitionTabs value={selectedCompetition} onChange={changeCompetition} />
     <div className="career-club-picker">{loading ? <div className="empty-state"><strong>Cargando clubes reales…</strong></div> : clubs.map((club) => <button type="button" key={club.id} className={selectedClubId === club.id ? "active" : ""} onClick={() => setSelectedClubId(club.id)}><span>{club.name.split(/\s+/).map((word) => word[0]).slice(0,2).join("")}</span><p><strong>{club.name}</strong><small>{club.playerCount} jugadores · {club.squadValue.toFixed(1).replace(".", ",")} M</small></p><i>{selectedClubId === club.id ? "✓" : ""}</i></button>)}</div>
     <article className="career-guided-note"><span>?</span><p><strong>¿Qué cambia con la exigencia?</strong><small>No hace mejores a tus jugadores. Ajusta la presión de la directiva, el margen para fallar, la dificultad de los objetivos y la reputación que puedes ganar. No podrá cambiarse durante la temporada.</small></p></article>
     <div className="career-difficulty"><p className="eyebrow">NIVEL DE EXIGENCIA</p>{([{ id: "relaxed", title: "Cantera", badge: "PARA APRENDER", text: "Objetivos progresivos y más margen ante una mala racha.", bullets: ["Penalizaciones reducidas", "Reputación ×0,80", "Más tiempo para cumplir"] }, { id: "balanced", title: "Profesional", badge: "RECOMENDADO", text: "La experiencia completa con riesgo y recompensa equilibrados.", bullets: ["Presión realista", "Reputación ×1,00", "Objetivos adaptados al club"] }, { id: "elite", title: "Élite", badge: "MÁXIMO RETO", text: "La directiva exige resultados rápidos y castiga cada tropiezo.", bullets: ["Menos margen de error", "Reputación ×1,35", "Objetivos más ambiciosos"] }] as const).map((item) => <button type="button" key={item.id} className={difficulty === item.id ? "active" : ""} onClick={() => setDifficulty(item.id)}><em>{item.badge}</em><strong>{item.title}</strong><small>{item.text}</small><ul>{item.bullets.map((bullet)=><li key={bullet}>✓ {bullet}</li>)}</ul></button>)}</div>
@@ -12542,6 +12631,8 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, caree
           <section className="admin-grid">
             <ClubRulesAdminPanel rules={clubRules} onChange={setClubRules} notify={notify} />
             <CareerRulesAdminPanel rules={careerRules} careers={careers} onChange={setCareerRules} onSave={onSaveCareerRules} notify={notify} />
+            <CareerDelegationRulesAdminPanel rules={careerRules} onChange={setCareerRules} onSave={onSaveCareerRules} notify={notify}/>
+            <CareerInterludeAdminPanel rules={careerRules} onChange={setCareerRules} onSave={onSaveCareerRules} notify={notify}/>
             <CareerContentAdminPanel notify={notify} />
             <AchievementEconomyAdminPanel rules={economyRules} onChange={setEconomyRules} notify={notify} />
             <MarketRulesAdminPanel rules={marketRules} onChange={setMarketRules} notify={notify} />
@@ -13068,8 +13159,8 @@ function CatalogSyncAdminPanel({ enabled, onApplied, notify }: { enabled: boolea
       <article className="catalog-sync-lifecycle-note">
         <strong>Qué ocurrirá al aplicar los cambios</strong>
         <span><b>Altas</b> estarán disponibles en operaciones futuras, sin alterar equipos existentes.</span>
-        <span><b>Cambio de club</b> conservará propietario y operaciones si continúa en la misma división.</span>
-        <span><b>Bajas o cambio de división</b> conservarán el historial y la Carrera, pero cancelarán pujas, anuncios y ofertas incompatibles.</span>
+        <span><b>Cambio de club</b> conservará el historial; si afecta a una Carrera del club de origen, creará una decisión obligatoria antes del siguiente once.</span>
+        <span><b>Bajas o cambio de división</b> cancelarán pujas, anuncios y ofertas incompatibles y abrirán una incidencia en las Carreras afectadas.</span>
         <span><b>Onces cerrados y retos congelados</b> no se modificarán nunca.</span>
         <span><b>Correcciones manuales</b> de nombre, club, división, posición, estado y foto se reemplazarán por la fuente; el valor interno se conserva.</span>
       </article>
@@ -13107,6 +13198,7 @@ function CatalogSyncAdminPanel({ enabled, onApplied, notify }: { enabled: boolea
           <span>{summary.reconciliation.systemListingsCancelled + summary.reconciliation.userListingsCancelled} anuncios retirados</span>
           <span>{summary.reconciliation.systemBidsCancelled + summary.reconciliation.userOffersCancelled + summary.reconciliation.directOffersCancelled} pujas y ofertas canceladas</span>
           <span>{summary.reconciliation.lineupsRequiringReview} alineaciones futuras para revisar</span>
+          {summary.careerIncidentsCreated != null && <span>{summary.careerIncidentsCreated} decisiones de Carrera creadas</span>}
         </div>
       )}
       {error && <p className="form-error">{error}</p>}
@@ -14262,10 +14354,31 @@ function ClubRulesAdminPanel({ rules, onChange, notify }: { rules: ClubRules; on
   );
 }
 
+function CareerInterludeAdminPanel({rules,onChange,onSave,notify}:{rules:CareerRules;onChange:(rules:CareerRules)=>void;onSave:(rules:CareerRules)=>Promise<void>;notify:(value:string)=>void}){
+  const [items,setItems]=useState<NexoCareerAdminInterlude[]>([]);const [loading,setLoading]=useState(true);
+  const update=<K extends keyof CareerRules>(key:K,value:CareerRules[K])=>onChange({...rules,[key]:value});
+  const refresh=()=>loadNexoCareerAdminInterludes().then(setItems).catch(()=>setItems([])).finally(()=>setLoading(false));
+  useEffect(()=>{void refresh()},[]);
+  async function saveItem(item:NexoCareerAdminInterlude,patch:Partial<NexoCareerAdminInterlude>){try{await updateNexoCareerAdminInterlude({...item,...patch});await refresh();notify("Interludio actualizado")}catch(error){notify(error instanceof Error?error.message:"No se pudo actualizar el interludio")}}
+  return <article className="admin-panel career-interlude-admin"><div className="section-title compact"><div><p className="eyebrow">CALENDARIO DE CARRERA</p><h2>Interludios de temporada</h2><p>Detecta descansos largos reales entre jornadas, sin confundirlos con un aplazamiento aislado.</p></div><button className={rules.interludeEnabled?"active-tag":"status-badge"} onClick={()=>update("interludeEnabled",!rules.interludeEnabled)}>{rules.interludeEnabled?"ACTIVOS":"PAUSADOS"}</button></div><div className="market-rule-controls"><label><span>Hueco mínimo</span><strong>{rules.interludeThresholdDays} días</strong><input type="range" min="5" max="30" value={rules.interludeThresholdDays} onChange={(event)=>update("interludeThresholdDays",Number(event.target.value))}/></label><label><span>Recuperación del grupo</span><strong>+{rules.interludeRecoveryConfidence} confianza</strong><input type="range" min="0" max="20" value={rules.interludeRecoveryConfidence} onChange={(event)=>update("interludeRecoveryConfidence",Number(event.target.value))}/></label><label><span>Protección táctica</span><strong>{rules.interludeTacticalProtectionPercent}%</strong><input type="range" min="0" max="100" step="5" value={rules.interludeTacticalProtectionPercent} onChange={(event)=>update("interludeTacticalProtectionPercent",Number(event.target.value))}/></label><label><span>Premio de cantera</span><strong>+{rules.interludeAcademyReputation} reputación</strong><input type="range" min="0" max="20" value={rules.interludeAcademyReputation} onChange={(event)=>update("interludeAcademyReputation",Number(event.target.value))}/></label><label><span>Ingreso comercial</span><strong>{rules.interludeCommercialBudget.toFixed(2)} M</strong><input type="range" min="0" max="10" step=".25" value={rules.interludeCommercialBudget} onChange={(event)=>update("interludeCommercialBudget",Number(event.target.value))}/></label><label><span>Coste de foco comercial</span><strong>-{rules.interludeCommercialConfidenceCost} confianza</strong><input type="range" min="0" max="20" value={rules.interludeCommercialConfidenceCost} onChange={(event)=>update("interludeCommercialConfidenceCost",Number(event.target.value))}/></label></div><div className="fantasy-admin-option-list"><button className={rules.interludeAutoActivate?"active":""} onClick={()=>update("interludeAutoActivate",!rules.interludeAutoActivate)}><span>{rules.interludeAutoActivate?"✓":""}</span><p><strong>Activación automática</strong><small>Si se desactiva, los descansos detectados quedarán pendientes de confirmación.</small></p></button></div><button className="primary-button full" onClick={()=>void onSave(rules).then(()=>notify("Reglas de interludio guardadas")).catch(()=>notify("No se pudieron guardar las reglas"))}>Guardar reglas de interludio</button><div className="career-interlude-admin-list"><p className="eyebrow">INTERLUDIOS DETECTADOS</p>{loading?<span>Cargando…</span>:items.length===0?<span>Aún no hay descansos largos detectados en carreras abiertas.</span>:items.map((item)=><section key={item.id}><input value={item.title} onChange={(event)=>setItems((current)=>current.map((entry)=>entry.id===item.id?{...entry,title:event.target.value}:entry))}/><p><b>{item.competitionId.toUpperCase()} · J{item.fromMatchday} → J{item.toMatchday}</b><small>{item.gapDays} días · {item.decisionCount} decisiones · {item.status}</small></p><button onClick={()=>void saveItem(item,{status:item.status==="active"?"pending":"active"})}>{item.status==="active"?"Pausar":"Activar"}</button><button disabled={item.decisionCount>0} onClick={()=>void saveItem(item,{status:"cancelled"})}>Cancelar</button><button onClick={()=>void saveItem(item,{})}>Guardar nombre</button></section>)}</div></article>;
+}
+
+function CareerDelegationRulesAdminPanel({rules,onChange,onSave,notify}:{rules:CareerRules;onChange:(rules:CareerRules)=>void;onSave:(rules:CareerRules)=>Promise<void>;notify:(value:string)=>void}){
+  const update=<K extends keyof CareerRules>(key:K,value:CareerRules[K])=>onChange({...rules,[key]:value});
+  const controls:[keyof CareerRules,string,number,number,number,string][]=[
+    ["delegationMaxUses","Usos por temporada",0,10,1,""],["delegationCooldownMatchdays","Jornadas de espera",0,8,1,""],["delegationWarningMargin","Margen de aviso sobre despido",0,30,1," pts"],
+    ["delegationCloseRanksCost","Coste · Cerrar filas",0,2,.25," M"],["delegationTacticalCost","Coste · Golpe táctico",0,2,.25," M"],["delegationAcademyCost","Coste · Proyecto de cantera",0,2,.25," M"],
+    ["delegationCloseRanksConfidence","Confianza de Cerrar filas",0,20,1," pts"],["delegationAcademyPointsMultiplier","Multiplicador de cantera",1,1.5,.05,"×"],["delegationIdentityRewardMultiplier","Premio de identidad",1,3,.25,"×"],
+    ["delegationMaxBonusUses","Usos extra desbloqueables",0,5,1,""],["delegationUnusedRewardThreshold","Mínimo sin usar para premio",0,10,1,""],["delegationUnusedRewardCoins","Premio por reserva",0,1000,25," monedas"],
+    ["delegationNeverUsedRewardCoins","Premio Siempre al mando",0,1500,50," monedas"],["delegationNeverUsedReputation","Reputación Siempre al mando",0,30,1," pts"],
+  ];
+  return <article className="admin-panel career-delegation-admin"><div className="section-title compact"><div><p className="eyebrow">SEGUNDO ENTRENADOR</p><h2>Delegación de jornada</h2><p>Equilibra la ayuda de emergencia, sus desbloqueos y los premios de final de temporada.</p></div><button className={rules.delegationEnabled?"active-tag":"status-badge"} onClick={()=>update("delegationEnabled",!rules.delegationEnabled)}>{rules.delegationEnabled?"ACTIVA":"PAUSADA"}</button></div><div className="market-rule-controls">{controls.map(([key,label,min,max,step,suffix])=><label key={key}><span>{label}</span><strong>{suffix==="×"?"×":""}{Number(rules[key]).toFixed(step<1?2:0)}{suffix==="×"?"":suffix}</strong><input type="range" min={min} max={max} step={step} value={Number(rules[key])} onChange={(event)=>update(key,Number(event.target.value) as never)}/></label>)}</div><div className="fantasy-admin-option-list"><button className={rules.delegationUnlocksEnabled?"active":""} onClick={()=>update("delegationUnlocksEnabled",!rules.delegationUnlocksEnabled)}><span>{rules.delegationUnlocksEnabled?"✓":""}</span><p><strong>Usos extra por objetivos</strong><small>Los objetivos importantes completados pueden ampliar el límite de la temporada.</small></p></button></div><div className="career-delegation-admin-summary"><span><b>Cerrar filas</b> +{rules.delegationCloseRanksConfidence} confianza y reduce un fallo.</span><span><b>Golpe táctico</b> vicecapitán y suplencia automática por ausencia.</span><span><b>Proyecto de cantera</b> ×{rules.delegationAcademyPointsMultiplier.toFixed(2)} puntos y ×{rules.delegationIdentityRewardMultiplier.toFixed(2)} premio de identidad.</span><span><b>Siempre al mando</b> {rules.delegationNeverUsedRewardCoins} monedas y +{rules.delegationNeverUsedReputation} reputación por terminar sin delegar.</span></div><button className="primary-button full" onClick={()=>void onSave(rules).then(()=>notify("Reglas de delegación guardadas")).catch(()=>notify("No se han podido guardar las reglas"))}>Guardar reglas de delegación</button></article>
+}
+
 function CareerRulesAdminPanel({ rules, careers, onChange, onSave, notify: showNotice }: { rules: CareerRules; careers: NexoCareer[]; onChange: (rules: CareerRules) => void; onSave: (rules: CareerRules) => Promise<void>; notify: (value: string) => void }) {
   function update<K extends keyof CareerRules>(key: K, value: CareerRules[K]) { onChange({ ...rules, [key]: value }); }
   function notify(value: string) { void onSave(rules).then(() => showNotice(value)).catch(() => showNotice("No se han podido guardar las reglas de Carrera")); }
-  return <article className="admin-panel career-rules-admin"><div className="section-title compact"><div><p className="eyebrow">MODO DIFERENCIAL</p><h2>Carrera de mánager</h2></div><span className="active-tag">{rules.enabled ? "ACTIVO" : "PAUSADO"}</span></div><p className="algorithm-description">Configura el contrato global. Los multiplicadores se fijan al crear cada contrato; las reglas de cierre y decisiones se aplican desde la siguiente jornada.</p><div className="career-admin-stats"><span><small>CARRERAS ACTIVAS</small><strong>{careers.filter((career) => career.status === "active").length}</strong></span><span><small>CLUBES REALES</small><strong>{new Set(careers.map((career) => career.sportsClubId)).size}</strong></span><span><small>REP. MEDIA</small><strong>{careers.length ? Math.round(careers.reduce((sum, career) => sum + career.reputation, 0) / careers.length) : 0}</strong></span></div><div className="market-rule-controls"><label><span>Presupuesto inicial</span><strong>{rules.initialBudget} M</strong><input type="range" min="0" max="100" step="5" value={rules.initialBudget} onChange={(event)=>update("initialBudget",Number(event.target.value))}/></label><label><span>Jugadores originales en plantilla</span><strong>Mínimo {rules.minimumOriginalSquad}</strong><input type="range" min="0" max="20" value={rules.minimumOriginalSquad} onChange={(event)=>update("minimumOriginalSquad",Number(event.target.value))}/></label><label><span>Originales en el once</span><strong>Mínimo {rules.minimumOriginalLineup}</strong><input type="range" min="0" max="11" value={rules.minimumOriginalLineup} onChange={(event)=>update("minimumOriginalLineup",Number(event.target.value))}/></label><label><span>Carreras gratis</span><strong>{rules.freeCareersPerCompetition} por competición</strong><input type="range" min="0" max="3" value={rules.freeCareersPerCompetition} onChange={(event)=>update("freeCareersPerCompetition",Number(event.target.value))}/></label><label><span>Coste de carrera adicional</span><strong>{rules.extraCareerCoinCost} monedas</strong><input type="range" min="0" max="2000" step="50" value={rules.extraCareerCoinCost} onChange={(event)=>update("extraCareerCoinCost",Number(event.target.value))}/></label><label><span>Coste de apostar por cantera</span><strong>{rules.academyDecisionCost.toFixed(2).replace(".",",")} M</strong><input type="range" min="0" max="3" step="0.25" value={rules.academyDecisionCost} onChange={(event)=>update("academyDecisionCost",Number(event.target.value))}/></label><label><span>Penalización por objetivo fallado</span><strong>-{rules.failureConfidencePenalty} confianza</strong><input type="range" min="1" max="25" value={rules.failureConfidencePenalty} onChange={(event)=>update("failureConfidencePenalty",Number(event.target.value))}/></label><label><span>Umbral de destitución</span><strong>{rules.dismissalConfidenceThreshold}/100</strong><input type="range" min="0" max="40" value={rules.dismissalConfidenceThreshold} onChange={(event)=>update("dismissalConfidenceThreshold",Number(event.target.value))}/></label><label><span>Objetivos · Cantera</span><strong>×{rules.relaxedTargetMultiplier.toFixed(2)}</strong><input type="range" min="0.6" max="1" step="0.05" value={rules.relaxedTargetMultiplier} onChange={(event)=>update("relaxedTargetMultiplier",Number(event.target.value))}/></label><label><span>Objetivos · Profesional</span><strong>×{rules.balancedTargetMultiplier.toFixed(2)}</strong><input type="range" min="0.8" max="1.2" step="0.05" value={rules.balancedTargetMultiplier} onChange={(event)=>update("balancedTargetMultiplier",Number(event.target.value))}/></label><label><span>Objetivos · Élite</span><strong>×{rules.eliteTargetMultiplier.toFixed(2)}</strong><input type="range" min="1" max="1.5" step="0.05" value={rules.eliteTargetMultiplier} onChange={(event)=>update("eliteTargetMultiplier",Number(event.target.value))}/></label></div><div className="fantasy-admin-option-list"><button className={rules.enabled?"active":""} onClick={()=>update("enabled",!rules.enabled)}><span>{rules.enabled?"✓":""}</span><p><strong>Permitir nuevas carreras</strong><small>Las existentes siguen accesibles aunque se pause.</small></p></button><button className={rules.weeklyDecisionEnabled?"active":""} onClick={()=>update("weeklyDecisionEnabled",!rules.weeklyDecisionEnabled)}><span>{rules.weeklyDecisionEnabled?"✓":""}</span><p><strong>Decisiones semanales</strong><small>Dilemas con consecuencias económicas y deportivas reales.</small></p></button><button className={rules.sameClubRankingEnabled?"active":""} onClick={()=>update("sameClubRankingEnabled",!rules.sameClubRankingEnabled)}><span>{rules.sameClubRankingEnabled?"✓":""}</span><p><strong>Ranking del mismo club</strong><small>Comparativa asíncrona sin compartir mercado.</small></p></button></div><button className="primary-button full" onClick={()=>notify("Reglas de Carrera guardadas para contratos y jornadas futuras")}>Guardar reglas de Carrera</button></article>;
+  return <article className="admin-panel career-rules-admin"><div className="section-title compact"><div><p className="eyebrow">MODO DIFERENCIAL</p><h2>Carrera de mánager</h2></div><span className="active-tag">{rules.enabled ? "ACTIVO" : "PAUSADO"}</span></div><p className="algorithm-description">Configura el contrato global. Los multiplicadores se fijan al crear cada contrato; las reglas de cierre y decisiones se aplican desde la siguiente jornada.</p><div className="career-admin-stats"><span><small>CARRERAS ACTIVAS</small><strong>{careers.filter((career) => career.status === "active").length}</strong></span><span><small>CLUBES REALES</small><strong>{new Set(careers.map((career) => career.sportsClubId)).size}</strong></span><span><small>REP. MEDIA</small><strong>{careers.length ? Math.round(careers.reduce((sum, career) => sum + career.reputation, 0) / careers.length) : 0}</strong></span></div><div className="market-rule-controls"><label><span>Presupuesto inicial</span><strong>{rules.initialBudget} M</strong><input type="range" min="0" max="100" step="5" value={rules.initialBudget} onChange={(event)=>update("initialBudget",Number(event.target.value))}/></label><label><span>Jugadores originales en plantilla</span><strong>Mínimo {rules.minimumOriginalSquad}</strong><input type="range" min="0" max="20" value={rules.minimumOriginalSquad} onChange={(event)=>update("minimumOriginalSquad",Number(event.target.value))}/></label><label><span>Originales en el once</span><strong>Mínimo {rules.minimumOriginalLineup}</strong><input type="range" min="0" max="11" value={rules.minimumOriginalLineup} onChange={(event)=>update("minimumOriginalLineup",Number(event.target.value))}/></label><label><span>Carreras gratis</span><strong>{rules.freeCareersPerCompetition} por competición</strong><input type="range" min="0" max="3" value={rules.freeCareersPerCompetition} onChange={(event)=>update("freeCareersPerCompetition",Number(event.target.value))}/></label><label><span>Coste de carrera adicional</span><strong>{rules.extraCareerCoinCost} monedas</strong><input type="range" min="0" max="2000" step="50" value={rules.extraCareerCoinCost} onChange={(event)=>update("extraCareerCoinCost",Number(event.target.value))}/></label><label><span>Coste de apostar por cantera</span><strong>{rules.academyDecisionCost.toFixed(2).replace(".",",")} M</strong><input type="range" min="0" max="3" step="0.25" value={rules.academyDecisionCost} onChange={(event)=>update("academyDecisionCost",Number(event.target.value))}/></label><label><span>Penalización por objetivo fallado</span><strong>-{rules.failureConfidencePenalty} confianza</strong><input type="range" min="1" max="25" value={rules.failureConfidencePenalty} onChange={(event)=>update("failureConfidencePenalty",Number(event.target.value))}/></label><label><span>Umbral de destitución</span><strong>{rules.dismissalConfidenceThreshold}/100</strong><input type="range" min="0" max="40" value={rules.dismissalConfidenceThreshold} onChange={(event)=>update("dismissalConfidenceThreshold",Number(event.target.value))}/></label><label><span>Objetivos · Cantera</span><strong>×{rules.relaxedTargetMultiplier.toFixed(2)}</strong><input type="range" min="0.6" max="1" step="0.05" value={rules.relaxedTargetMultiplier} onChange={(event)=>update("relaxedTargetMultiplier",Number(event.target.value))}/></label><label><span>Objetivos · Profesional</span><strong>×{rules.balancedTargetMultiplier.toFixed(2)}</strong><input type="range" min="0.8" max="1.2" step="0.05" value={rules.balancedTargetMultiplier} onChange={(event)=>update("balancedTargetMultiplier",Number(event.target.value))}/></label><label><span>Objetivos · Élite</span><strong>×{rules.eliteTargetMultiplier.toFixed(2)}</strong><input type="range" min="1" max="1.5" step="0.05" value={rules.eliteTargetMultiplier} onChange={(event)=>update("eliteTargetMultiplier",Number(event.target.value))}/></label><label><span>Salida · reinversión</span><strong>{rules.exitReinvestPercent}% del valor</strong><input type="range" min="50" max="120" step="5" value={rules.exitReinvestPercent} onChange={(event)=>update("exitReinvestPercent",Number(event.target.value))}/></label><label><span>Salida · identidad</span><strong>{rules.exitIdentityPercent}% del valor</strong><input type="range" min="50" max="100" step="5" value={rules.exitIdentityPercent} onChange={(event)=>update("exitIdentityPercent",Number(event.target.value))}/></label></div><div className="fantasy-admin-option-list"><button className={rules.enabled?"active":""} onClick={()=>update("enabled",!rules.enabled)}><span>{rules.enabled?"✓":""}</span><p><strong>Permitir nuevas carreras</strong><small>Las existentes siguen accesibles aunque se pause.</small></p></button><button className={rules.weeklyDecisionEnabled?"active":""} onClick={()=>update("weeklyDecisionEnabled",!rules.weeklyDecisionEnabled)}><span>{rules.weeklyDecisionEnabled?"✓":""}</span><p><strong>Decisiones semanales</strong><small>Dilemas con consecuencias económicas y deportivas reales.</small></p></button><button className={rules.catalogIncidentsEnabled?"active":""} onClick={()=>update("catalogIncidentsEnabled",!rules.catalogIncidentsEnabled)}><span>{rules.catalogIncidentsEnabled?"✓":""}</span><p><strong>Salidas reales como evento</strong><small>Convierte bajas y cambios de club en decisiones obligatorias de Carrera.</small></p></button><button className={rules.sameClubRankingEnabled?"active":""} onClick={()=>update("sameClubRankingEnabled",!rules.sameClubRankingEnabled)}><span>{rules.sameClubRankingEnabled?"✓":""}</span><p><strong>Ranking del mismo club</strong><small>Comparativa asíncrona sin compartir mercado.</small></p></button></div><button className="primary-button full" onClick={()=>notify("Reglas de Carrera guardadas para contratos y jornadas futuras")}>Guardar reglas de Carrera</button></article>;
 }
 
 function CareerContentAdminPanel({ notify }: { notify: (value: string) => void }) {

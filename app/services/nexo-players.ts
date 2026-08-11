@@ -16,6 +16,7 @@ export type CatalogSyncSummary = {
   positionChanges?: number;
   unchanged: number;
   total: number;
+  careerIncidentsCreated?: number;
   competitions: Record<"primera" | "segunda" | "liga_f", number>;
   reconciliation?: {
     systemListingsCancelled: number;
