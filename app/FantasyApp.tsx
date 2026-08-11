@@ -14,7 +14,7 @@ import { cancelNexoLeagueReservation, confirmNexoLeagueJoin, confirmNexoMarketLe
 import { cancelNexoMarketBid, cancelNexoUserMarketOffer, forceNexoMarketRenewal, listNexoRosterPlayer, loadNexoLeagueActivity, loadNexoLeagueMarket, loadNexoLeagueMarketHistory, loadNexoLeagueUserMarket, placeNexoMarketBid, placeNexoUserMarketOffer, respondNexoUserMarketOffer, withdrawNexoUserListing, type NexoLeagueActivityEntry, type NexoLeagueMarket, type NexoLeagueUserMarket, type NexoMarketHistoryEntry, type NexoUserMarketListing, type NexoUserMarketOffer } from "./services/nexo-market";
 import { loadNexoPlayerCatalog, loadNexoPlayerCatalogSyncHistory, loadNexoPlayerMatchdayPoints, runNexoPlayerCatalogSync, updateNexoPlayer, type CatalogSyncJob, type CatalogSyncResult } from "./services/nexo-players";
 import { loadNexoCalendarSyncHistory, loadNexoMatchCalendar, runNexoCalendarSync, type CalendarSyncJob, type CalendarSyncResult, type MatchFixture } from "./services/nexo-calendar";
-import { deleteNexoMatchdaySimulation, loadNexoMatchdayHistory, loadNexoMatchdayLineups, loadNexoMatchdayStates, saveNexoMatchdayLineup, simulateNexoMatchdayClose, type NexoMatchdayHistory, type NexoMatchdaySimulation, type NexoMatchdayState, type NexoSimulationScenario } from "./services/nexo-matchdays";
+import { deleteNexoMatchdaySimulation, loadNexoMatchdayHistory, loadNexoMatchdayLifecycleConfig, loadNexoMatchdayLineups, loadNexoMatchdayStates, saveNexoMatchdayLifecycleConfig, saveNexoMatchdayLineup, simulateNexoMatchdayClose, type NexoMatchdayHistory, type NexoMatchdaySimulation, type NexoMatchdayState, type NexoSimulationScenario } from "./services/nexo-matchdays";
 import { createNexoChallenge, loadNexoChallenges, snapshotNexoChallenge } from "./services/nexo-challenges";
 import { buyNexoPlayerClause, loadNexoLeagueContracts, raiseNexoPlayerClause, sellNexoPlayerImmediately, setNexoPlayerBlindage, type NexoLeagueContracts, type NexoPlayerContract } from "./services/nexo-contracts";
 import { loadNexoNotifications, markAllNexoNotificationsRead, markNexoNotificationRead } from "./services/nexo-notifications";
@@ -152,6 +152,7 @@ type MatchdaySettlementRules = {
   postponedGraceHours: number;
   postponedPolicy: "wait" | "provisional";
   advanceNoticeHours: number;
+  lineupOpenHours: number;
   activateNextFantasyEvents: boolean;
 };
 type AuthUser = {
@@ -1418,6 +1419,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     postponedGraceHours: 48,
     postponedPolicy: "provisional",
     advanceNoticeHours: 24,
+    lineupOpenHours: 168,
     activateNextFantasyEvents: true,
   });
   const [claimedAchievements, setClaimedAchievements] = useState<string[]>([]);
@@ -1540,6 +1542,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
   }));
   const [matchFixtures, setMatchFixtures] = useState<MatchFixture[]>([]);
   const [backendMatchdays, setBackendMatchdays] = useState<NexoMatchdayState[]>([]);
+  const [selectedMatchdayByCompetition, setSelectedMatchdayByCompetition] = useState<Record<string, number>>({});
   const [matchdayHistory, setMatchdayHistory] = useState<NexoMatchdayHistory[]>([]);
   useEffect(() => {
     const refresh = () => void refreshBackendCalendar();
@@ -1705,7 +1708,11 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
   const selectedFantasyEvent = fantasyEvents.find((event) => event.id === selectedLeagueId);
   const selectedLeague = leagues.find((item) => item.id === selectedLeagueId);
   const selectedCompetitionBackendId = selectedLeague?.competition === "Primera" ? "primera" : selectedLeague?.competition === "Segunda" ? "segunda" : "liga_f";
-  const selectedEditableMatchday = backendMatchdays.find((item) => item.competitionId === selectedCompetitionBackendId && item.state === "open")?.matchday ?? CURRENT_MATCHDAY;
+  const selectedCompetitionOpenMatchdays = backendMatchdays.filter((item) => item.competitionId === selectedCompetitionBackendId && item.state === "open");
+  const preferredEditableMatchday = selectedMatchdayByCompetition[selectedCompetitionBackendId];
+  const selectedEditableMatchday = selectedCompetitionOpenMatchdays.some((item) => item.matchday === preferredEditableMatchday)
+    ? preferredEditableMatchday
+    : selectedCompetitionOpenMatchdays[0]?.matchday ?? CURRENT_MATCHDAY;
   const effectiveMarketRules = selectedPrivateRules
     ? {
         ...marketRules,
@@ -1764,6 +1771,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     void refreshBackendCalendar();
     void refreshBackendLineups();
     void refreshBackendMatchdays();
+    void refreshBackendSettlementRules();
     void refreshBackendMatchdayHistory();
     void refreshBackendChallenges();
     void refreshBackendNotifications();
@@ -1831,6 +1839,15 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       setBackendMatchdays(await loadNexoMatchdayStates());
     } catch {
       /* El selector mantiene la Jornada 1 hasta que el ciclo esté disponible. */
+    }
+  }
+
+  async function refreshBackendSettlementRules() {
+    try {
+      const config = await loadNexoMatchdayLifecycleConfig();
+      setSettlementRules((current) => ({ ...current, ...config }));
+    } catch {
+      /* Se conservan las reglas visibles hasta que la migracion este disponible. */
     }
   }
 
@@ -3224,6 +3241,14 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
               onClausePurchase={(rivalTeamId, player, clause, blind) => executeClausePurchase(selectedLeagueId, rivalTeamId, player, clause, blind)}
               scoringRules={scoringRules}
               settlementRules={settlementRules}
+              editableMatchdays={selectedCompetitionOpenMatchdays}
+              activeEditableMatchday={selectedEditableMatchday}
+              onSelectEditableMatchday={(matchday) =>
+                setSelectedMatchdayByCompetition((current) => ({
+                  ...current,
+                  [selectedCompetitionBackendId]: matchday,
+                }))
+              }
               matchdayHistory={matchdayHistory}
               fixtures={matchFixtures}
               fantasyLineup={fantasyLineups[`${participations.find((entry) => entry.leagueId === selectedLeagueId)?.id ?? ""}:${selectedFantasyEvent?.matchdays[0] ?? selectedEditableMatchday}`]}
@@ -5917,7 +5942,7 @@ function LeagueAreaNav({ section, onChange, mobile = false }: { section: LeagueA
   );
 }
 
-function LeagueDetailView({ league, team, participation, squad, section, onSectionChange, onBack, marketPlayers, marketRules, backendMarketEnabled, rankingRows, privateRules, canManagePrivateLeague, privateAdmin, privateParticipants, onManagePrivateLeague, reports, onReport, onResolveReport, onLeaveLeague, bids, onChangeBids, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, scoringRules, settlementRules, matchdayHistory, fixtures, fantasyLineup, previousFantasyLineup, fantasyEvent, onSaveFantasyLineup, onAdjustBudget, onImmediateSale, notify }: { league: LeagueSummary; team: FantasyTeamSummary; participation?: LeagueParticipation; squad?: InitialSquad; section: LeagueAreaSection; onSectionChange: (section: LeagueAreaSection) => void; onBack: () => void; marketPlayers: MarketPlayer[]; marketRules: MarketRules; backendMarketEnabled: boolean; rankingRows: NexoLeagueRankingRow[]; privateRules?: PrivateLeagueRules; canManagePrivateLeague: boolean; privateAdmin?: PrivateLeagueParticipant; privateParticipants: PrivateLeagueParticipant[]; onManagePrivateLeague: () => void; reports: LeagueReport[]; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeaveLeague: (successorId?: string) => Promise<string | null>; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; matchdayHistory: NexoMatchdayHistory[]; fixtures: MatchFixture[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; fantasyEvent?: FantasyEvent; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => Promise<void> | void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; notify: (message: string) => void }) {
+function LeagueDetailView({ league, team, participation, squad, section, onSectionChange, onBack, marketPlayers, marketRules, backendMarketEnabled, rankingRows, privateRules, canManagePrivateLeague, privateAdmin, privateParticipants, onManagePrivateLeague, reports, onReport, onResolveReport, onLeaveLeague, bids, onChangeBids, playerContracts, playerOffers, onChangePlayerContract, onCreatePlayerOffer, onRespondPlayerOffer, sentOffers, onChangeSentOffers, clausePurchases, matchdayStartAt, onClausePurchase, scoringRules, settlementRules, editableMatchdays, activeEditableMatchday, onSelectEditableMatchday, matchdayHistory, fixtures, fantasyLineup, previousFantasyLineup, fantasyEvent, onSaveFantasyLineup, onAdjustBudget, onImmediateSale, notify }: { league: LeagueSummary; team: FantasyTeamSummary; participation?: LeagueParticipation; squad?: InitialSquad; section: LeagueAreaSection; onSectionChange: (section: LeagueAreaSection) => void; onBack: () => void; marketPlayers: MarketPlayer[]; marketRules: MarketRules; backendMarketEnabled: boolean; rankingRows: NexoLeagueRankingRow[]; privateRules?: PrivateLeagueRules; canManagePrivateLeague: boolean; privateAdmin?: PrivateLeagueParticipant; privateParticipants: PrivateLeagueParticipant[]; onManagePrivateLeague: () => void; reports: LeagueReport[]; onReport: (rival: RivalTeam, category: ReportCategory, details: string) => string | null; onResolveReport: (reportId: string, resolution: ReportResolution) => void; onLeaveLeague: (successorId?: string) => Promise<string | null>; bids: MarketBid[]; onChangeBids: (bids: MarketBid[]) => void; playerContracts: Record<string, PlayerContract>; playerOffers: Record<string, PlayerOffer[]>; onChangePlayerContract: (playerId: string, contract: PlayerContract) => void; onCreatePlayerOffer: (player: InitialSquadPlayer, source: "rival" | "game") => void; onRespondPlayerOffer: (player: InitialSquadPlayer, offerId: string, accept: boolean) => void; sentOffers: SentOffer[]; onChangeSentOffers: (offers: SentOffer[]) => void; clausePurchases: ClausePurchase[]; matchdayStartAt: number; onClausePurchase: (rivalTeamId: string, player: InitialSquadPlayer, clause: number, blind: boolean) => string | null; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; editableMatchdays: NexoMatchdayState[]; activeEditableMatchday: number; onSelectEditableMatchday: (matchday: number) => void; matchdayHistory: NexoMatchdayHistory[]; fixtures: MatchFixture[]; fantasyLineup?: FantasyLineupDraft; previousFantasyLineup?: FantasyLineupDraft; fantasyEvent?: FantasyEvent; onSaveFantasyLineup: (lineup: FantasyLineupDraft) => Promise<void> | void; onAdjustBudget: (difference: number) => void; onImmediateSale: (player: InitialSquadPlayer) => void; notify: (message: string) => void }) {
   const [optionsOpen, setOptionsOpen] = useState(false);
   const starters = squad?.players.filter((player) => squad.startingPlayerIds.includes(player.id)) ?? [];
   const ownedMarketListings = (squad?.players ?? []).flatMap((player) => {
@@ -5968,9 +5993,26 @@ function LeagueDetailView({ league, team, participation, squad, section, onSecti
           <p>Podrás montar el once cuando se cierre la Jornada {fantasyEvent.previousMatchday} y el backend congele los valores de mercado de los clubes incluidos.</p>
         </article>
       )}
+      {section === "equipo" && !fantasyEvent && editableMatchdays.length > 0 && (
+        <section className="parallel-matchday-switcher">
+          <div>
+            <p className="eyebrow">ALINEACIONES INDEPENDIENTES</p>
+            <strong>{editableMatchdays.length > 1 ? "Hay varias jornadas abiertas" : "Jornada disponible"}</strong>
+            <small>Cada jornada guarda su propio once y se bloquea al comenzar su primer partido.</small>
+          </div>
+          <nav aria-label="Elegir jornada que se quiere preparar">
+            {editableMatchdays.map((item) => (
+              <button key={item.id} className={activeEditableMatchday === item.matchday ? "active" : ""} onClick={() => onSelectEditableMatchday(item.matchday)}>
+                <b>J{item.matchday}</b>
+                <span>{item.lockAt ? `Cierra ${new Date(item.lockAt).toLocaleDateString("es-ES", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : "Horario pendiente"}</span>
+              </button>
+            ))}
+          </nav>
+        </section>
+      )}
       {section === "equipo" && (!fantasyEvent || fantasyEvent.snapshot) && <LeagueSquadView squad={squad} starters={starters} league={league} marketPlayers={fantasyScopedPlayers} fixtures={fixtures} participationId={participation?.id ?? ""} history={matchdayHistory.filter((item) => item.membershipId === participation?.id)} budget={participation?.budget ?? 0} fantasyMatchdayBudget={fantasyEvent?.snapshot?.budget ?? marketRules.fantasyMatchdayBudget} fantasyOptions={marketRules} fantasyEvent={fantasyEvent} scoringRules={scoringRules} fantasyLineup={fantasyLineup} previousFantasyLineup={previousFantasyLineup} onSaveFantasyLineup={onSaveFantasyLineup} playerContracts={playerContracts} playerOffers={playerOffers} onChangePlayerContract={onChangePlayerContract} onCreatePlayerOffer={onCreatePlayerOffer} onRespondPlayerOffer={onRespondPlayerOffer} onAdjustBudget={onAdjustBudget} onImmediateSale={onImmediateSale} backendEnabled={backendMarketEnabled} notify={notify} />}
       {section === "mercado" && <LeagueMarketView league={league} players={fantasyScopedPlayers} squad={squad} budget={participation?.budget ?? 100} rules={marketRules} backendEnabled={backendMarketEnabled} bids={bids} onChangeBids={onChangeBids} ownedListings={ownedMarketListings} receivedOffers={receivedMarketOffers} onRespondOffer={onRespondPlayerOffer} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} onGenerateSystemOffers={() => ownedMarketListings.forEach(({ player }) => onCreatePlayerOffer(player, "game"))} notify={notify} />}
-      {section === "jornada" && <LeagueMatchdayView squad={squad} competition={league.competition} fixtures={fixtures} scoringRules={scoringRules} settlementRules={settlementRules} history={matchdayHistory.filter((item) => item.membershipId === participation?.id)} onPrepareTeam={() => onSectionChange("equipo")} notify={notify} />}
+      {section === "jornada" && <LeagueMatchdayView squad={squad} competition={league.competition} fixtures={fixtures} scoringRules={scoringRules} settlementRules={settlementRules} history={matchdayHistory.filter((item) => item.membershipId === participation?.id)} onPrepareTeam={(matchday) => { onSelectEditableMatchday(matchday); onSectionChange("equipo"); }} notify={notify} />}
       {section === "clasificacion" && <LeagueRankingView leagueId={league.id} team={team} competition={league.competition} rankingRows={rankingRows} backendEnabled={backendMarketEnabled} budget={participation?.budget ?? 0} rules={marketRules} bidCommitment={bids.reduce((total, bid) => total + bid.amount, 0)} sentOffers={sentOffers} onChangeSentOffers={onChangeSentOffers} clausePurchases={clausePurchases} matchdayStartAt={matchdayStartAt} onClausePurchase={onClausePurchase} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} currentUserIsAdmin={canManagePrivateLeague} privateAdmin={privateAdmin} onReport={onReport} notify={notify} />}
       {optionsOpen && <LeagueOptionsDialog league={league} isPrivateLeague={Boolean(privateRules) || league.type.includes("Privada")} isAdmin={canManagePrivateLeague} participants={privateParticipants} reports={reports} onManage={() => { setOptionsOpen(false); onManagePrivateLeague(); }} onResolveReport={onResolveReport} onLeave={onLeaveLeague} onClose={() => setOptionsOpen(false)} />}
     </>
@@ -9540,7 +9582,7 @@ function BidDialog({ player, existingBid, committed, budget, spendingLimit, debt
   );
 }
 
-function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoringRules, settlementRules, history, onPrepareTeam, notify }: { squad?: InitialSquad; competition: CompetitionName; fixtures: MatchFixture[]; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; history: NexoMatchdayHistory[]; onPrepareTeam: () => void; notify: (message: string) => void }) {
+function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoringRules, settlementRules, history, onPrepareTeam, notify }: { squad?: InitialSquad; competition: CompetitionName; fixtures: MatchFixture[]; scoringRules: ScoringRule[]; settlementRules: MatchdaySettlementRules; history: NexoMatchdayHistory[]; onPrepareTeam: (matchday: number) => void; notify: (message: string) => void }) {
   const competitionFixtures = allFixtures.filter((fixture) => fixture.competition === competition);
   const roundNumbers = competitionFixtures.length ? Array.from(new Set(competitionFixtures.map((fixture) => fixture.matchday))).sort((a, b) => a - b) : [1, 2, 3, 4, 5];
   const matchdays = roundNumbers.map((number) => {
@@ -9561,9 +9603,9 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
   const [selectedPlayer, setSelectedPlayer] = useState<InitialSquadPlayer | null>(null);
   const [expandedFixture, setExpandedFixture] = useState<string | null>(null);
   const selected = matchdays.find((item) => item.number === selectedMatchday) ?? matchdays[0];
-  const finalized = selected.status === "Finalizada" || selected.status === "Recalculada";
   const selectedHistory = history.find((item) => item.matchday === selected.number);
-  const latestClosedMatchday = Math.max(0, ...history.filter((item) => item.state === "closed").map((item) => item.matchday));
+  const finalized = selected.status === "Finalizada" || selected.status === "Recalculada" || selectedHistory?.state === "provisional" || selectedHistory?.state === "closed";
+  const latestClosedMatchday = Math.max(0, ...history.filter((item) => item.state === "closed" || item.state === "provisional").map((item) => item.matchday));
   const historicalPlayer = (entry: NexoMatchdayHistory["players"][number]) =>
     squad?.players.find((player) => player.id === entry.playerId) ?? ({
       id: entry.playerId,
@@ -9646,7 +9688,7 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
             <strong>{latestClosedMatchday ? `Prepara la Jornada ${latestClosedMatchday + 1}` : "Prepara tu primer once"}</strong>
             <p>{latestClosedMatchday ? `La Jornada ${latestClosedMatchday} permanece en modo consulta con su once y puntos definitivos.` : "No habrá puntos ni una copia cerrada hasta que comiencen y finalicen los partidos oficiales."}</p>
           </div>
-          <button onClick={onPrepareTeam}>Preparar equipo →</button>
+          <button onClick={() => onPrepareTeam(latestClosedMatchday ? latestClosedMatchday + 1 : selected.number)}>Preparar Jornada {latestClosedMatchday ? latestClosedMatchday + 1 : selected.number} →</button>
         </article>
         <footer>
           <span>{competitionFixtures.length ? `✓ ${competitionFixtures.length} partidos sincronizados` : "◷ Calendario pendiente"}</span>
@@ -9847,10 +9889,23 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
               +{payout.toFixed(1).replace(".", ",")} M<small>ABONADOS</small>
             </strong>
             <footer>
-              <b>✓ Pago único registrado</b>
+              <b>{selectedHistory?.settlementStatus === "provisional" ? "◷ Cierre provisional registrado" : selectedHistory?.settlementStatus === "adjusted" ? `✓ Ajuste definitivo · revisión ${selectedHistory.revision}` : "✓ Pago definitivo registrado"}</b>
               <span>Máximo por jornada: {settlementRules.maximumPayout.toFixed(1).replace(".", ",")} M</span>
             </footer>
           </article>
+          {selectedHistory?.settlementStatus === "provisional" && <article className="matchday-adjustment-notice pending">
+            <span>↻</span>
+            <div><strong>Queda un ajuste pendiente</strong><p>Los puntos confirmados ya cuentan. Cuando se dispute el partido aplazado, el backend recalculará esta jornada sin tocar las alineaciones.</p></div>
+          </article>}
+          {!!selectedHistory?.adjustments.length && <section className="matchday-adjustment-history">
+            <header><p className="eyebrow">REVISIONES DE LA JORNADA</p><strong>{selectedHistory.adjustments.length} movimientos auditados</strong></header>
+            {selectedHistory.adjustments.map((adjustment) => <article key={adjustment.revision}>
+              <span>R{adjustment.revision}</span>
+              <p><strong>{adjustment.type === "provisional" ? "Cierre provisional" : adjustment.type === "adjustment" ? "Ajuste posterior" : "Cierre final"}</strong><small>{new Date(adjustment.createdAt).toLocaleString("es-ES")}</small></p>
+              <b>{adjustment.pointsBefore} → {adjustment.pointsAfter} pts</b>
+              <em>{adjustment.payoutDelta >= 0 ? "+" : ""}{adjustment.payoutDelta.toFixed(1).replace(".", ",")} M</em>
+            </article>)}
+          </section>}
           <article className="closed-lineup-banner">
             <span>✓</span>
             <div>
@@ -13348,6 +13403,7 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
   const [simulation, setSimulation] = useState<NexoMatchdaySimulation | null>(null);
   const [simulationLoading, setSimulationLoading] = useState(false);
   const [simulationError, setSimulationError] = useState("");
+  const [savingRules, setSavingRules] = useState(false);
 
   useEffect(() => {
     if (!availableMatchdays.some((item) => item.matchday === simulationMatchday) && availableMatchdays[0]) setSimulationMatchday(availableMatchdays[0].matchday);
@@ -13389,8 +13445,34 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
     }
   }
 
+  async function persistLifecycleRules() {
+    if (!enabled) {
+      notify("Inicia sesión como administrador para guardar estas reglas en el backend");
+      return;
+    }
+    setSavingRules(true);
+    setSimulationError("");
+    try {
+      const saved = await saveNexoMatchdayLifecycleConfig({
+        moneyPerPoint: rules.moneyPerPoint,
+        minimumPayout: rules.minimumPayout,
+        maximumPayout: rules.maximumPayout,
+        postponedGraceHours: rules.postponedGraceHours,
+        postponedPolicy: rules.postponedPolicy,
+        advanceNoticeHours: rules.advanceNoticeHours,
+        lineupOpenHours: rules.lineupOpenHours,
+      });
+      onChange({ ...rules, ...saved });
+      notify("Reglas reales de jornadas guardadas para los siguientes cierres");
+    } catch (failure) {
+      setSimulationError(failure instanceof Error ? failure.message : "No se han podido guardar las reglas");
+    } finally {
+      setSavingRules(false);
+    }
+  }
+
   function simulationStateLabel(state: NexoMatchdayState["state"]) {
-    return state === "scheduled" ? "Programada" : state === "open" ? "Abierta" : state === "locked" ? "Bloqueada" : state === "awaiting_stats" ? "Esperando estadísticas" : "Cerrada";
+    return state === "scheduled" ? "Programada" : state === "open" ? "Abierta" : state === "locked" ? "Bloqueada" : state === "awaiting_stats" ? "Esperando estadísticas" : state === "provisional" ? "Cierre provisional" : "Cerrada";
   }
   return (
     <section className="admin-panel settlement-admin-panel">
@@ -13534,6 +13616,14 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
         <article>
           <p className="eyebrow">PARTIDOS ADELANTADOS</p>
           <label>
+            <span>Ventana para preparar jornadas</span>
+            <select value={rules.lineupOpenHours} onChange={(event) => onChange({ ...rules, lineupOpenHours: Number(event.target.value) })}>
+              <option value={72}>3 días antes</option>
+              <option value={168}>7 días antes</option>
+              <option value={336}>14 días antes</option>
+            </select>
+          </label>
+          <label>
             <span>Aviso mínimo esperado</span>
             <select
               value={rules.advanceNoticeHours}
@@ -13625,8 +13715,8 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
             <span>Escenario</span>
             <select value={simulationScenario} onChange={(event) => { setSimulationScenario(event.target.value as NexoSimulationScenario); setSimulation(null); }}>
               <option value="normal">Cierre con los datos disponibles</option>
-              <option value="postponed">Comprobar bloqueo por aplazado</option>
-              <option value="advanced">Comprobar jornada adelantada</option>
+              <option value="postponed">Aplazado: provisional y ajuste posterior</option>
+              <option value="advanced">Adelanto y jornadas solapadas</option>
             </select>
           </label>
           <button className="primary-button" onClick={runSimulation} disabled={simulationLoading || !enabled || !availableMatchdays.length}>
@@ -13665,6 +13755,24 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
                 </small>
               </p>
             </div>
+            <section className={`simulation-lifecycle-preview ${simulation.lifecyclePreview.canExecute ? "ready" : "blocked"}`}>
+              <header>
+                <div>
+                  <p className="eyebrow">CICLO REAL · {simulationScenario === "postponed" ? "APLAZAMIENTO" : simulationScenario === "advanced" ? "ADELANTO" : "CIERRE"}</p>
+                  <h3>{simulation.lifecyclePreview.operation === "provisional_close" ? "Cierre provisional y ajuste pendiente" : simulation.lifecyclePreview.operation === "independent_lock" ? "Bloqueos independientes por jornada" : simulation.lifecyclePreview.operation === "wait" ? "La jornada esperaría" : simulation.lifecyclePreview.operation === "final_close" ? "Cierre definitivo" : "Operación bloqueada"}</h3>
+                </div>
+                <span>{simulation.lifecyclePreview.adjustmentPending ? "DESPUÉS: SOLO DIFERENCIA" : simulation.lifecyclePreview.canExecute ? "COMPROBADO" : "PENDIENTE"}</span>
+              </header>
+              <ol>{simulation.lifecyclePreview.steps.map((step, index) => <li key={`${step}-${index}`}><b>{index + 1}</b><span>{step}</span></li>)}</ol>
+              {!!simulation.lifecyclePreview.overlappingMatchdays.length && <div className="simulation-overlapping-rounds">
+                {simulation.lifecyclePreview.overlappingMatchdays.map((round) => <article key={round.id}>
+                  <span>J{round.matchday}</span>
+                  <p><strong>{simulationStateLabel(round.state)}</strong><small>{round.lockAt ? `Bloqueo ${new Date(round.lockAt).toLocaleString("es-ES", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}` : "Sin bloqueo calculado"}</small></p>
+                  <b>{round.draftCount} borradores · {round.snapshotCount} fotos</b>
+                </article>)}
+              </div>}
+              {simulation.lifecyclePreview.adjustmentPending && <footer>Cuando finalice el aplazado se recalculan puntos, clasificación y saldo. El sistema registra una nueva revisión y abona o descuenta únicamente la diferencia.</footer>}
+            </section>
             <section className="simulation-result-kpis">
               <article><small>Participaciones</small><strong>{simulation.memberships}</strong></article>
               <article><small>Alineaciones válidas</small><strong>{simulation.validLineups}</strong></article>
@@ -13798,7 +13906,7 @@ function MatchdaySettlementAdminPanel({ rules, onChange, matchdays, enabled, not
           <strong>Ejemplo con las reglas actuales</strong>
           <span>58 puntos → +{examplePayout.toFixed(1).replace(".", ",")} M</span>
         </div>
-        <button className="primary-button" onClick={() => notify("Reglas de cierre guardadas para jornadas futuras")}>Guardar reglas</button>
+        <button className="primary-button" onClick={() => void persistLifecycleRules()} disabled={savingRules}>{savingRules ? "Guardando…" : "Guardar reglas reales"}</button>
       </footer>
     </section>
   );

@@ -18,13 +18,30 @@ export type NexoMatchdayState = {
   competitionId: string;
   season: string;
   matchday: number;
-  state: "scheduled" | "open" | "locked" | "awaiting_stats" | "closed";
+  state: "scheduled" | "open" | "locked" | "awaiting_stats" | "provisional" | "closed";
   lockAt?: string;
   lockedAt?: string;
   closedAt?: string;
   fixtureCount: number;
   finalFixtureCount: number;
   statsReadyCount: number;
+  postponedFixtureCount: number;
+  provisionalDeadlineAt?: string;
+  provisionalClosedAt?: string;
+  adjustedAt?: string;
+  settlementStatus: "pending" | "provisional" | "final" | "adjusted";
+  settlementRevision: number;
+};
+
+export type NexoMatchdayAdjustment = {
+  revision: number;
+  type: "provisional" | "final" | "adjustment";
+  pointsBefore: number;
+  pointsAfter: number;
+  payoutBefore: number;
+  payoutAfter: number;
+  payoutDelta: number;
+  createdAt: string;
 };
 
 export type NexoMatchdayHistoryPlayer = {
@@ -61,6 +78,11 @@ export type NexoMatchdayHistory = {
   leagueAverage: number;
   bestScore: number;
   players: NexoMatchdayHistoryPlayer[];
+  settlementStatus: "provisional" | "final" | "adjusted";
+  revision: number;
+  provisionalClosedAt?: string;
+  adjustedAt?: string;
+  adjustments: NexoMatchdayAdjustment[];
 };
 
 export type NexoSimulationScenario = "normal" | "postponed" | "advanced";
@@ -233,12 +255,78 @@ export type NexoMatchdaySimulation = {
   results: NexoSimulationResultRow[];
   careerSimulation: NexoCareerSimulation;
   challengeSimulation: NexoChallengeSimulation;
+  lifecyclePreview: NexoLifecycleSimulation;
+};
+
+export type NexoOverlappingMatchday = {
+  id: string;
+  matchday: number;
+  state: NexoMatchdayState["state"];
+  lockAt?: string;
+  firstKickoffAt?: string;
+  draftCount: number;
+  snapshotCount: number;
+};
+
+export type NexoLifecycleSimulation = {
+  operation: "blocked" | "final_close" | "provisional_close" | "wait" | "independent_lock";
+  canExecute: boolean;
+  provisional: boolean;
+  adjustmentPending: boolean;
+  graceHours?: number;
+  noticeHours?: number;
+  economicMode: "final_once" | "confirmed_points_then_delta" | "no_payment_until_final" | "independent_by_sporting_matchday";
+  steps: string[];
+  overlappingMatchdays: NexoOverlappingMatchday[];
+};
+
+export type NexoMatchdayLifecycleConfig = {
+  moneyPerPoint: number;
+  minimumPayout: number;
+  maximumPayout: number;
+  postponedGraceHours: number;
+  postponedPolicy: "wait" | "provisional";
+  advanceNoticeHours: number;
+  lineupOpenHours: number;
 };
 
 function requireClient() {
   const client = getSupabaseClient();
   if (!client) throw new Error("Supabase todavía no está configurado.");
   return client;
+}
+
+export async function loadNexoMatchdayLifecycleConfig(): Promise<NexoMatchdayLifecycleConfig> {
+  const { data, error } = await requireClient().rpc("get_matchday_lifecycle_config");
+  if (error) throw new Error(error.message);
+  return mapLifecycleConfig(data);
+}
+
+export async function saveNexoMatchdayLifecycleConfig(config: NexoMatchdayLifecycleConfig): Promise<NexoMatchdayLifecycleConfig> {
+  const { data, error } = await requireClient().rpc("admin_save_matchday_lifecycle_config", {
+    target_money_per_point: config.moneyPerPoint,
+    target_minimum_payout: config.minimumPayout,
+    target_maximum_payout: config.maximumPayout,
+    target_postponed_grace_hours: config.postponedGraceHours,
+    target_postponed_policy: config.postponedPolicy,
+    target_advance_notice_hours: config.advanceNoticeHours,
+    target_lineup_open_hours: config.lineupOpenHours,
+  });
+  if (error) throw new Error(error.message);
+  return mapLifecycleConfig(data);
+}
+
+function mapLifecycleConfig(value: unknown): NexoMatchdayLifecycleConfig {
+  const config = (value ?? {}) as Record<string, unknown>;
+  return {
+    moneyPerPoint: Number(config.moneyPerPoint ?? 0.1),
+    minimumPayout: Number(config.minimumPayout ?? 0),
+    maximumPayout: Number(config.maximumPayout ?? 15),
+    postponedGraceHours: Number(config.postponedGraceHours ?? 48),
+    postponedPolicy: config.postponedPolicy === "wait" ? "wait" : "provisional",
+    advanceNoticeHours: Number(config.advanceNoticeHours ?? 24),
+    lineupOpenHours: Number(config.lineupOpenHours ?? 168),
+  };
 }
 
 export async function saveNexoMatchdayLineup(input: {
@@ -275,7 +363,7 @@ export async function loadNexoMatchdayStates(): Promise<NexoMatchdayState[]> {
   const client = requireClient();
   const { data, error } = await client
     .from("competition_matchdays")
-    .select("id,competition_id,season,matchday,state,lock_at,locked_at,closed_at,fixture_count,final_fixture_count,stats_ready_count")
+    .select("id,competition_id,season,matchday,state,lock_at,locked_at,closed_at,fixture_count,final_fixture_count,stats_ready_count,postponed_fixture_count,provisional_deadline_at,provisional_closed_at,adjusted_at,settlement_status,settlement_revision")
     .eq("season", "2026")
     .order("competition_id")
     .order("matchday");
@@ -292,6 +380,12 @@ export async function loadNexoMatchdayStates(): Promise<NexoMatchdayState[]> {
     fixtureCount: row.fixture_count,
     finalFixtureCount: row.final_fixture_count,
     statsReadyCount: row.stats_ready_count,
+    postponedFixtureCount: Number(row.postponed_fixture_count ?? 0),
+    provisionalDeadlineAt: row.provisional_deadline_at ?? undefined,
+    provisionalClosedAt: row.provisional_closed_at ?? undefined,
+    adjustedAt: row.adjusted_at ?? undefined,
+    settlementStatus: (row.settlement_status ?? "pending") as NexoMatchdayState["settlementStatus"],
+    settlementRevision: Number(row.settlement_revision ?? 0),
   }));
 }
 
@@ -329,6 +423,20 @@ export async function loadNexoMatchdayHistory(): Promise<NexoMatchdayHistory[]> 
       rawPoints: Number(player.rawPoints),
       multiplier: Number(player.multiplier),
       points: Number(player.points),
+    })),
+    settlementStatus: (row.settlement_status ?? (row.state === "provisional" ? "provisional" : "final")) as NexoMatchdayHistory["settlementStatus"],
+    revision: Number(row.revision ?? 0),
+    provisionalClosedAt: row.provisional_closed_at ? String(row.provisional_closed_at) : undefined,
+    adjustedAt: row.adjusted_at ? String(row.adjusted_at) : undefined,
+    adjustments: ((row.adjustments ?? []) as Record<string, unknown>[]).map((adjustment) => ({
+      revision: Number(adjustment.revision),
+      type: adjustment.type as NexoMatchdayAdjustment["type"],
+      pointsBefore: Number(adjustment.pointsBefore),
+      pointsAfter: Number(adjustment.pointsAfter),
+      payoutBefore: Number(adjustment.payoutBefore),
+      payoutAfter: Number(adjustment.payoutAfter),
+      payoutDelta: Number(adjustment.payoutDelta),
+      createdAt: String(adjustment.createdAt),
     })),
   }));
 }
@@ -371,6 +479,7 @@ export async function simulateNexoMatchdayClose(input: { competitionId: string; 
     challengesToActivate: Number(result.challengesToActivate),
     careerSimulation: mapCareerSimulation(result.careerSimulation),
     challengeSimulation: mapChallengeSimulation(result.challengeSimulation),
+    lifecyclePreview: mapLifecycleSimulation(result.lifecyclePreview),
     results: ((result.results ?? []) as Record<string, unknown>[]).map((row) => ({
       membershipId: String(row.membershipId),
       leagueId: String(row.leagueId),
@@ -415,6 +524,29 @@ export async function simulateNexoMatchdayClose(input: { competitionId: string; 
         detail: String(movement.detail),
         amount: Number(movement.amount ?? 0),
       })),
+    })),
+  };
+}
+
+function mapLifecycleSimulation(value: unknown): NexoLifecycleSimulation {
+  const preview = (value ?? {}) as Record<string, unknown>;
+  return {
+    operation: (preview.operation ?? "blocked") as NexoLifecycleSimulation["operation"],
+    canExecute: Boolean(preview.canExecute),
+    provisional: Boolean(preview.provisional),
+    adjustmentPending: Boolean(preview.adjustmentPending),
+    graceHours: preview.graceHours == null ? undefined : Number(preview.graceHours),
+    noticeHours: preview.noticeHours == null ? undefined : Number(preview.noticeHours),
+    economicMode: (preview.economicMode ?? "final_once") as NexoLifecycleSimulation["economicMode"],
+    steps: ((preview.steps ?? []) as unknown[]).map(String),
+    overlappingMatchdays: ((preview.overlappingMatchdays ?? []) as Record<string, unknown>[]).map((round) => ({
+      id: String(round.id),
+      matchday: Number(round.matchday),
+      state: round.state as NexoMatchdayState["state"],
+      lockAt: round.lockAt ? String(round.lockAt) : undefined,
+      firstKickoffAt: round.firstKickoffAt ? String(round.firstKickoffAt) : undefined,
+      draftCount: Number(round.draftCount ?? 0),
+      snapshotCount: Number(round.snapshotCount ?? 0),
     })),
   };
 }
