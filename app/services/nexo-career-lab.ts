@@ -10,13 +10,17 @@ export type CareerLabTeam = { id: string; name: string; competitionId: string; p
 export type CareerLabOptions = { users: CareerLabUser[]; careers: CareerLabCareer[]; teams: CareerLabTeam[] };
 export type CareerLabSession = { id: string; title: string; userId: string; userName?: string; competitionId: string; sportsClubId: string; sportsClubName?: string; difficulty: string; profile: CareerLabProfile; mode: CareerLabMode; seed: string; status: string; matchday: number; maximumMatchday: number; phase: CareerLabPhase; updatedAt: string; expiresAt?: string; previewToken?: string; previewEnabled?: boolean };
 export type CareerLabPlayer = { id: string; name: string; initials: string; position: string; club: string; clubId: string; value: number; original: boolean; active: boolean; status?: string; points?: number };
+export type CareerLabObjective = { id: string; type: "season" | "identity" | "matchday" | "confidence"; title: string; description: string; targetValue: number; currentValue: number; reputationReward: number; failurePenalty: number; status: "active" | "completed" | "failed"; expiresMatchday?: number };
+export type CareerLabDecisionChoice = { key: string; title: string; summary: string; reputationChange: number; confidenceChange: number; budgetChange: number; sportingPointsChange: number; condition?: string; conditionalBonus?: number };
+export type CareerLabDecisionPrompt = { key: string; title: string; description: string; choices: CareerLabDecisionChoice[] };
 export type CareerLabCheck = { key: string; label: string; passed: boolean; detail?: string };
 export type CareerLabLog = { sequence: number; matchday: number; phase: string; action: string; title: string; detail: string; checks: CareerLabCheck[]; severity: string; createdAt: string };
 export type CareerLabEvent = { id: string; matchday: number; moment: string; type: string; title: string; payload: Record<string, unknown>; status: string };
 export type CareerLabCheckpoint = { id: string; sequence: number; matchday: number; phase: string; label: string; createdAt: string };
+export type CareerLabCalendarRound = { matchday: number; originalStart: string; originalEnd: string; startAt: string; endAt: string; edited: boolean; gapBeforeDays?: number; interludeDetected?: boolean };
 export type CareerLabState = {
   session: CareerLabSession;
-  state: { budget: number; confidence: number; reputation: number; sportingPoints: number; objectivePoints: number; consecutiveFailures: number; status: string; squad: CareerLabPlayer[]; currentLineup?: { formation: string; captainId: string; valid: boolean; locked: boolean; points?: number; players: CareerLabPlayer[] } | null; reports: Array<Record<string, unknown>>; incidents: Array<Record<string, unknown>>; interludes: Array<Record<string, unknown>>; calendarExceptions: Array<Record<string, unknown>>; activeInterlude?: Record<string, unknown>; realSideEffects: number };
+  state: { budget: number; confidence: number; reputation: number; sportingPoints: number; objectivePoints: number; consecutiveFailures: number; status: string; squad: CareerLabPlayer[]; currentLineup?: { formation: string; captainId: string; originals?: number; valid: boolean; locked: boolean; points?: number; players: CareerLabPlayer[] } | null; reports: Array<Record<string, unknown>>; decisions: Array<Record<string, unknown>>; objectives: CareerLabObjective[]; decisionPrompt?: CareerLabDecisionPrompt; incidents: Array<Record<string, unknown>>; interludes: Array<Record<string, unknown>>; calendarExceptions: Array<Record<string, unknown>>; activeInterlude?: Record<string, unknown>; realSideEffects: number };
   lastReport?: { action: string; detail: string; checks: CareerLabCheck[] };
   events: CareerLabEvent[];
   logs: CareerLabLog[];
@@ -59,8 +63,11 @@ export const runCareerLab = (id: string, until: "matchday" | "next_interlude" | 
 export const scheduleCareerLabEvent = (id: string, event: { matchday: number; moment: string; type: string; title: string; payload: Record<string, unknown> }) => rpc<string>("admin_schedule_manager_career_lab_event", { target_session_id: id, target_matchday: event.matchday, target_moment: event.moment, target_type: event.type, target_title: event.title, target_payload: event.payload });
 export const restoreCareerLabCheckpoint = (id: string, checkpointId: string) => rpc<CareerLabState>("admin_restore_manager_career_lab_checkpoint", { target_session_id: id, target_checkpoint_id: checkpointId });
 export const deleteCareerLab = (id: string) => rpc<void>("admin_delete_manager_career_lab", { target_session_id: id });
+export const loadCareerLabCalendar = (id: string) => rpc<CareerLabCalendarRound[]>("admin_manager_career_lab_calendar", { target_session_id: id });
+export const updateCareerLabCalendar = (id: string, matchday: number, startAt: string, endAt: string) => rpc<CareerLabState>("admin_update_manager_career_lab_calendar", { target_session_id: id, target_matchday: matchday, target_start_at: startAt, target_end_at: endAt, target_interlude_days: 10 });
 
 export type CareerLabPublicPreview = Pick<CareerLabState, "state"> & {
   session: Pick<CareerLabSession, "title" | "userName" | "competitionId" | "sportsClubName" | "status" | "matchday" | "maximumMatchday" | "phase" | "updatedAt">;
 };
 export const loadCareerLabPublicPreview = (token: string) => rpc<CareerLabPublicPreview>("manager_career_lab_public_preview", { target_token: token });
+export const actCareerLabPublic = (token: string, action: "decision" | "prepare_lineup" | "lock_lineup" | "interlude" | "incident", payload: Record<string, unknown> = {}) => rpc<CareerLabPublicPreview>("manager_career_lab_public_action", { target_token: token, target_action: action, target_payload: payload });
