@@ -22,6 +22,7 @@ import { loadNexoCareerTrends, loadNexoClubActivity, loadNexoCompetitionTrends, 
 import { createNexoCareer, loadNexoCareerAdminInterludes, loadNexoCareerClubs, loadNexoCareerContentCatalog, loadNexoCareerRules, loadNexoCareers, loadNexoProfileAchievements, loadNexoProfileCoins, saveNexoCareerContentItem, saveNexoCareerRules, updateNexoCareerAdminInterlude, type NexoCareer, type NexoCareerAdminInterlude, type NexoCareerClub, type NexoCareerContentItem, type NexoCareerDifficulty } from "./services/nexo-career";
 import { withBasePath } from "./base-path";
 import { ManagerCareerView } from "./components/ManagerCareerView";
+import { CareerLaboratoryAdmin } from "./components/admin/CareerLaboratoryAdmin";
 
 type Section = "inicio" | "equipo" | "tendencias" | "ligas" | "liga" | "carrera" | "perfil" | "ayuda" | "admin";
 type LeagueAreaSection = "resumen" | "equipo" | "mercado" | "jornada" | "clasificacion";
@@ -11962,7 +11963,7 @@ function HelpView() {
   );
 }
 
-type AdminSection = "overview" | "users" | "clubs" | "leagues" | "markets" | "players" | "scoring" | "audit";
+type AdminSection = "overview" | "laboratory" | "users" | "clubs" | "leagues" | "markets" | "players" | "scoring" | "audit";
 
 const adminDemoUsers = [
   {
@@ -12550,6 +12551,7 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, caree
       </section>
       <nav className="admin-console-nav" aria-label="Áreas de administración">
         {[
+          ["laboratory", "Laboratorio", "LAB"],
           ["overview", "Resumen", "⌂"],
           ["users", "Usuarios", "●"],
           ["clubs", "Clubes", "C"],
@@ -12565,6 +12567,8 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, caree
           </button>
         ))}
       </nav>
+
+      {section === "laboratory" && <CareerLaboratoryAdmin enabled={simulationEnabled} notify={notify} />}
 
       {section === "overview" && (
         <>
