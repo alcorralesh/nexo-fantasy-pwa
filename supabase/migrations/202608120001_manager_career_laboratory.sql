@@ -21,6 +21,8 @@ create table if not exists public.manager_career_lab_sessions (
   config jsonb not null default '{}'::jsonb,
   last_report jsonb,
   error_message text,
+  preview_token text not null unique default (replace(gen_random_uuid()::text,'-','') || replace(gen_random_uuid()::text,'-','')),
+  preview_enabled boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   expires_at timestamptz not null default now() + interval '14 days'
@@ -185,7 +187,7 @@ language plpgsql stable security definer set search_path=public as $$
 declare selected public.manager_career_lab_sessions%rowtype;
 begin
   perform public.manager_career_lab_assert_admin(); select * into selected from public.manager_career_lab_sessions where id=target_session_id and created_by=auth.uid(); if not found then raise exception 'Laboratorio no disponible'; end if;
-  return jsonb_build_object('session',jsonb_build_object('id',selected.id,'title',selected.title,'userId',selected.subject_user_id,'competitionId',selected.competition_id,'sportsClubId',selected.sports_club_id,'difficulty',selected.difficulty,'profile',selected.manager_profile,'mode',selected.run_mode,'seed',selected.seed,'status',selected.status,'matchday',selected.current_matchday,'maximumMatchday',selected.maximum_matchday,'phase',selected.phase,'updatedAt',selected.updated_at),'state',selected.state,'lastReport',selected.last_report,
+  return jsonb_build_object('session',jsonb_build_object('id',selected.id,'title',selected.title,'userId',selected.subject_user_id,'userName',(select display_name from public.profiles where id=selected.subject_user_id),'competitionId',selected.competition_id,'sportsClubId',selected.sports_club_id,'sportsClubName',(select name from public.sports_clubs where id=selected.sports_club_id),'difficulty',selected.difficulty,'profile',selected.manager_profile,'mode',selected.run_mode,'seed',selected.seed,'status',selected.status,'matchday',selected.current_matchday,'maximumMatchday',selected.maximum_matchday,'phase',selected.phase,'updatedAt',selected.updated_at,'previewToken',selected.preview_token,'previewEnabled',selected.preview_enabled),'state',selected.state,'lastReport',selected.last_report,
     'events',coalesce((select jsonb_agg(jsonb_build_object('id',e.id,'matchday',e.matchday,'moment',e.moment,'type',e.event_type,'title',e.title,'payload',e.payload,'status',e.status) order by e.matchday,e.created_at) from public.manager_career_lab_events e where e.session_id=selected.id),'[]'::jsonb),
     'logs',coalesce((select jsonb_agg(jsonb_build_object('sequence',l.sequence,'matchday',l.matchday,'phase',l.phase,'action',l.action,'title',l.title,'detail',l.detail,'checks',l.checks,'severity',l.severity,'createdAt',l.created_at) order by l.sequence desc) from public.manager_career_lab_logs l where l.session_id=selected.id),'[]'::jsonb),
     'checkpoints',coalesce((select jsonb_agg(jsonb_build_object('id',c.id,'sequence',c.sequence,'matchday',c.matchday,'phase',c.phase,'label',c.label,'createdAt',c.created_at) order by c.sequence desc) from public.manager_career_lab_checkpoints c where c.session_id=selected.id),'[]'::jsonb));

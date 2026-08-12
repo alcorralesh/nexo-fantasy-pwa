@@ -23,6 +23,7 @@ import { createNexoCareer, loadNexoCareerAdminInterludes, loadNexoCareerClubs, l
 import { withBasePath } from "./base-path";
 import { ManagerCareerView } from "./components/ManagerCareerView";
 import { CareerLaboratoryAdmin } from "./components/admin/CareerLaboratoryAdmin";
+import { CareerLaboratoryObserver } from "./components/CareerLaboratoryObserver";
 
 type Section = "inicio" | "equipo" | "tendencias" | "ligas" | "liga" | "carrera" | "perfil" | "ayuda" | "admin";
 type LeagueAreaSection = "resumen" | "equipo" | "mercado" | "jornada" | "clasificacion";
@@ -1398,6 +1399,7 @@ function LegalAcceptanceDialog({ config, onAccept, onLogout }: { config: LegalCo
 
 export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData }) {
   const [authChecked, setAuthChecked] = useState(false);
+  const [careerLabObserverToken, setCareerLabObserverToken] = useState<string | null>(null);
   const [sessionUser, setSessionUser] = useState<AuthUser | null>(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [onboardingConfig, setOnboardingConfig] = useState<OnboardingConfig>({
@@ -1611,6 +1613,9 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
   const [backendMatchdays, setBackendMatchdays] = useState<NexoMatchdayState[]>([]);
   const [selectedMatchdayByCompetition, setSelectedMatchdayByCompetition] = useState<Record<string, number>>({});
   const [matchdayHistory, setMatchdayHistory] = useState<NexoMatchdayHistory[]>([]);
+  useEffect(() => {
+    setCareerLabObserverToken(new URLSearchParams(window.location.search).get("careerLab"));
+  }, []);
   useEffect(() => {
     const refresh = () => void refreshBackendCalendar();
     window.addEventListener("nexo-calendar-updated", refresh);
@@ -3193,6 +3198,8 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
     setFantasyJoinEventId(null);
     setTeamCreatorOpen(true);
   }
+
+  if (careerLabObserverToken) return <CareerLaboratoryObserver token={careerLabObserverToken} />;
 
   if (!authChecked || !sessionUser)
     return (

@@ -847,6 +847,8 @@ export const helpRules: HelpRule[] = [
       "Los aplazamientos generan un cierre provisional y un ajuste posterior sobre la misma alineación bloqueada; los adelantos y jornadas coincidentes mantienen alineaciones independientes.",
       "Cada paso crea un punto de control restaurable y un registro con estado anterior, estado posterior y comprobaciones de integridad.",
       "La vista del usuario lleva siempre una marca visible de simulación para impedir que pueda confundirse con una Carrera real.",
+      "Cada sesión puede compartir una vista observadora de solo lectura mediante un enlace temporal; permite seguirla en otro navegador y se actualiza automáticamente cada dos segundos.",
+      "El enlace observador no requiere permisos administrativos, no permite realizar acciones y deja de funcionar al eliminar, archivar o caducar la sesión de laboratorio.",
       "Las comprobaciones automáticas validan presupuesto, confianza, reputación, plantilla, once, capitán y aislamiento de efectos secundarios.",
       "Una simulación no genera monedas, logros, notificaciones, posiciones reales, operaciones de mercado ni actividad visible para otros usuarios.",
       "Las sesiones son temporales, pueden eliminarse por completo desde su propia página y no dejan datos asociados en la cuenta seleccionada.",

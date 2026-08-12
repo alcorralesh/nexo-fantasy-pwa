@@ -8,7 +8,7 @@ export type CareerLabUser = { id: string; name: string; email: string; initials:
 export type CareerLabCareer = { id: string; userId: string; competitionId: string; sportsClubId: string; sportsClubName: string; difficulty: string; matchday: number; status: string };
 export type CareerLabTeam = { id: string; name: string; competitionId: string; playerCount: number };
 export type CareerLabOptions = { users: CareerLabUser[]; careers: CareerLabCareer[]; teams: CareerLabTeam[] };
-export type CareerLabSession = { id: string; title: string; userId: string; userName?: string; competitionId: string; sportsClubId: string; sportsClubName?: string; difficulty: string; profile: CareerLabProfile; mode: CareerLabMode; seed: string; status: string; matchday: number; maximumMatchday: number; phase: CareerLabPhase; updatedAt: string; expiresAt?: string };
+export type CareerLabSession = { id: string; title: string; userId: string; userName?: string; competitionId: string; sportsClubId: string; sportsClubName?: string; difficulty: string; profile: CareerLabProfile; mode: CareerLabMode; seed: string; status: string; matchday: number; maximumMatchday: number; phase: CareerLabPhase; updatedAt: string; expiresAt?: string; previewToken?: string; previewEnabled?: boolean };
 export type CareerLabPlayer = { id: string; name: string; initials: string; position: string; club: string; clubId: string; value: number; original: boolean; active: boolean; status?: string; points?: number };
 export type CareerLabCheck = { key: string; label: string; passed: boolean; detail?: string };
 export type CareerLabLog = { sequence: number; matchday: number; phase: string; action: string; title: string; detail: string; checks: CareerLabCheck[]; severity: string; createdAt: string };
@@ -59,3 +59,8 @@ export const runCareerLab = (id: string, until: "matchday" | "next_interlude" | 
 export const scheduleCareerLabEvent = (id: string, event: { matchday: number; moment: string; type: string; title: string; payload: Record<string, unknown> }) => rpc<string>("admin_schedule_manager_career_lab_event", { target_session_id: id, target_matchday: event.matchday, target_moment: event.moment, target_type: event.type, target_title: event.title, target_payload: event.payload });
 export const restoreCareerLabCheckpoint = (id: string, checkpointId: string) => rpc<CareerLabState>("admin_restore_manager_career_lab_checkpoint", { target_session_id: id, target_checkpoint_id: checkpointId });
 export const deleteCareerLab = (id: string) => rpc<void>("admin_delete_manager_career_lab", { target_session_id: id });
+
+export type CareerLabPublicPreview = Pick<CareerLabState, "state"> & {
+  session: Pick<CareerLabSession, "title" | "userName" | "competitionId" | "sportsClubName" | "status" | "matchday" | "maximumMatchday" | "phase" | "updatedAt">;
+};
+export const loadCareerLabPublicPreview = (token: string) => rpc<CareerLabPublicPreview>("manager_career_lab_public_preview", { target_token: token });

@@ -71,6 +71,21 @@ export function CareerLaboratoryAdmin({ enabled, notify }: { enabled: boolean; n
     finally { setBusy(false); }
   }
 
+  function observerUrl() {
+    if (!lab?.session.previewToken || typeof window === "undefined") return "";
+    const url = new URL(window.location.href);
+    url.search = ""; url.hash = "";
+    url.searchParams.set("careerLab", lab.session.previewToken);
+    return url.toString();
+  }
+
+  async function copyObserverLink() {
+    const url = observerUrl();
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
+    notify("Enlace de observación copiado");
+  }
+
   if (!enabled) return <section className="career-lab-disabled"><span>LAB</span><div><h2>Laboratorio de Carrera</h2><p>Inicia sesión como administrador para usar este entorno de pruebas.</p></div></section>;
 
   if (!lab) return (
@@ -99,7 +114,7 @@ export function CareerLaboratoryAdmin({ enabled, notify }: { enabled: boolean; n
 
   return (
     <section className="career-lab-page">
-      <header className="career-lab-session-header"><button onClick={() => setLab(null)}>← Sesiones</button><div><p className="eyebrow">LABORATORIO · {competitionNames[lab.session.competitionId] ?? lab.session.competitionId}</p><h2>{lab.session.title}</h2><small>Jornada {lab.session.matchday} de {lab.session.maximumMatchday} · {phaseNames[lab.session.phase]}</small></div><span>ENTORNO AISLADO</span></header>
+      <header className="career-lab-session-header"><button onClick={() => setLab(null)}>← Sesiones</button><div><p className="eyebrow">LABORATORIO · {competitionNames[lab.session.competitionId] ?? lab.session.competitionId}</p><h2>{lab.session.title}</h2><small>Jornada {lab.session.matchday} de {lab.session.maximumMatchday} · {phaseNames[lab.session.phase]}</small></div><div className="career-lab-observer-actions"><span>ENTORNO AISLADO</span><button onClick={() => void copyObserverLink()}>Copiar enlace</button><button onClick={() => window.open(observerUrl(), "_blank", "noopener,noreferrer")}>Abrir observador ↗</button></div></header>
       <nav className="career-lab-tabs">{([['control','Temporada'],['events','Eventos'],['report','Informes'],['preview','Vista del usuario']] as const).map(([id, label]) => <button className={tab === id ? "active" : ""} onClick={() => setTab(id)} key={id}>{label}</button>)}</nav>
       {tab === "control" && <>
         <div className="career-lab-kpis"><article><small>Jornada</small><strong>{lab.session.matchday}<i>/{lab.session.maximumMatchday}</i></strong></article><article><small>Confianza</small><strong>{lab.state.confidence}<i>/100</i></strong></article><article><small>Reputación</small><strong>{lab.state.reputation}<i>/100</i></strong></article><article><small>Puntos</small><strong>{lab.state.sportingPoints}</strong></article><article><small>Presupuesto</small><strong>{Number(lab.state.budget).toFixed(1)} M</strong></article></div>
