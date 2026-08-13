@@ -1,7 +1,7 @@
 // @ts-nocheck -- Legacy prototype UI; the data layer remains fully typed.
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import type { CompetitionName, CompetitionSummary, FantasyBootstrapData, FantasyTeamSummary, InitialSquad, InitialSquadPlayer, LeagueParticipation, LeagueSummary, LineupData, LineupPlayer, MarketPlayer, PlayerPosition, PublicLeagueSummary } from "./data";
 import { helpRules } from "./data/help-rules";
 import { competitionCatalogSummary, competitionPlayers, type CompetitionPlayer } from "./data/competition-players";
@@ -765,8 +765,8 @@ function Brand() {
   );
 }
 
-function Avatar({ label = "BC" }: { label?: string }) {
-  return <span className="avatar">{label}</span>;
+function Avatar({ label = "BC", photoUrl, children }: { label?: string; photoUrl?: string; children?: ReactNode }) {
+  return <span className="avatar">{label}{photoUrl ? <img src={photoUrl} alt="" loading="lazy" onError={(event) => event.currentTarget.remove()} /> : null}{children}</span>;
 }
 
 function NotificationCenter({ notifications, onOpen, onMarkAllRead, onClose }: { notifications: AppNotification[]; onOpen: (notification: AppNotification) => void; onMarkAllRead: () => void; onClose: () => void }) {
@@ -1652,6 +1652,12 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
         .flat()
         .map((player) => [player.id, player] as const),
     );
+    const playerIdentityKey = (name: string, club: string) => `${name}::${club}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es");
+    const catalogByIdentity = new Map(
+      Object.values(adminPlayerCatalog)
+        .flat()
+        .map((player) => [playerIdentityKey(player.name, player.club), player] as const),
+    );
     setInitialSquads((current) => {
       let changed = false;
       const next = Object.fromEntries(
@@ -1659,7 +1665,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
           let squadChanged = false;
           const players = squad.players.map((player) => {
             if (player.photoUrl) return player;
-            const photoUrl = catalogById.get(player.id)?.photoUrl;
+            const photoUrl = catalogById.get(player.id)?.photoUrl ?? catalogByIdentity.get(playerIdentityKey(player.name, player.club))?.photoUrl;
             if (!photoUrl) return player;
             changed = true;
             squadChanged = true;
@@ -3286,7 +3292,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
         <main className={active === "liga" ? "content league-content" : "content"}>
           {active === "inicio" && <Dashboard userName={displayUser.displayName} competition={competition} setCompetition={setCompetition} teamId={teamId} team={team} participations={participations} clubMotto={clubIdentityMeta[teamId]?.motto} leagues={leagues} fixtures={matchFixtures} careers={careers} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} onOpenLeague={openLeague} onOpenCareer={(careerId) => { setSelectedCareerId(careerId); setActive("carrera"); window.requestAnimationFrame(() => window.scrollTo({ top: 0 })); }} onCreateCareer={() => setCareerCreatorOpen(true)} featuredFantasyEvent={fantasyEvents.find((event) => event.featured && event.competition === competition && event.status !== "finished")} onJoinFantasy={openFantasyJoin} navigate={navigate} />}
           {active === "equipo" && <TeamView teamId={teamId} setTeamId={setTeamId} teams={teams} leagues={leagues} participations={participations} fantasyEvents={fantasyEvents} careers={careers} clubRules={clubRules} clubIdentityMeta={clubIdentityMeta} onUpdateClub={updateClubIdentity} competition={competition} setCompetition={setCompetition} freeLimit={initialData.rules.freeTeamsPerCompetition} onCreateTeam={() => setTeamCreatorOpen(true)} onOpenLeague={openLeague} onOpenCareer={(careerId) => { setSelectedCareerId(careerId); setActive("carrera"); }} onCreateCareer={() => setCareerCreatorOpen(true)} onBrowseLeagues={() => navigate("ligas")} />}
-          {active === "tendencias" && <TrendsView competition={competition} setCompetition={setCompetition} query={query} setQuery={setQuery} position={position} setPosition={setPosition} leagues={leagues} rankingRows={Object.values(leagueRankings).flat()} />}
+          {active === "tendencias" && <TrendsView competition={competition} setCompetition={setCompetition} query={query} setQuery={setQuery} position={position} setPosition={setPosition} leagues={leagues} rankingRows={Object.values(leagueRankings).flat()} playerCatalog={adminPlayerCatalog} />}
           {active === "ligas" && <LeaguesView leagues={leagues} participations={participations} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} fantasyEvents={fantasyEvents.filter((event) => event.status !== "draft" && event.status !== "finished")} onOpenLeague={openLeague} onJoinPublic={() => setPublicJoinOpen(true)} onJoinFantasy={openFantasyJoin} onCreatePrivate={() => setPrivateLeagueCreatorOpen(true)} onCareer={() => setCareerCreatorOpen(true)} onJoinCode={findPrivateLeagueByCode} joinCode={joinCode} setJoinCode={setJoinCode} notify={notify} />}
           {active === "carrera" && <ManagerCareerView career={selectedCareerId ? careers.find((item) => item.id === selectedCareerId) : undefined} players={adminPlayerCatalog} fixtures={matchFixtures} rules={careerRules} backendEnabled={sessionUser?.id !== "demo_user"} onCareerChanged={refreshBackendCareers} onBack={() => navigate("equipo")} onNewCareer={() => setCareerCreatorOpen(true)} notify={notify} />}
           {active === "liga" && leagues.find((item) => item.id === selectedLeagueId) && (
@@ -4798,7 +4804,7 @@ function LegacyManagerCareerView({ career, players, fixtures, rules, onBack, onN
     <div className="career-main-grid"><article className="career-objectives"><p className="eyebrow">CONTRATO DE LA DIRECTIVA</p><h2>Objetivos que importan</h2><div className="career-objective-main"><span>{objectiveProgress}%</span><p><strong>Objetivo de temporada</strong><small>Alcanza 40 puntos deportivos manteniendo la identidad del club.</small><i><b style={{width:`${objectiveProgress}%`}} /></i></p></div><ul><li><span>✓</span><p><strong>Identidad del vestuario</strong><small>Mantén {rules.minimumOriginalSquad} jugadores originales y {rules.minimumOriginalLineup} en el once.</small></p><b>+8 REP</b></li><li><span>1</span><p><strong>Debut con carácter</strong><small>Supera 55 puntos fantasy en la Jornada 1.</small></p><b>+6 REP</b></li><li><span>★</span><p><strong>Haz historia</strong><small>Supera la expectativa real asignada al club.</small></p><b>+25 REP</b></li></ul></article>
     <article className="career-decision"><p className="eyebrow">DECISIÓN DE LA SEMANA</p><h2>El vestuario pide una señal</h2><p>Un joven reclama minutos antes de un partido clave. Tu decisión tendrá consecuencias.</p>{decisionMade ? <div className="career-decision-result"><span>✓</span><strong>Decisión registrada</strong><small>{decisionMade}</small></div> : <div><button onClick={() => setDecisionMade("Apuestas por la cantera: +reputación potencial, mayor riesgo deportivo.")}><strong>Apostar por la cantera</strong><small>+ reputación · + riesgo</small></button><button onClick={() => setDecisionMade("Priorizas la experiencia: menor riesgo, pero la afición espera más.")}><strong>Proteger el resultado</strong><small>− riesgo · presión futura</small></button></div>}<footer>Las decisiones se cierran con la jornada y no pueden repetirse.</footer></article></div>
     <section className="career-season-road"><div><p className="eyebrow">EL CAMINO</p><h2>Tu temporada, jornada a jornada</h2></div><div>{[1,5,10,20,30,38].map((matchday,index)=><article className={career.matchday>=matchday?"done":career.matchday+4>=matchday?"current":""} key={matchday}><span>{career.matchday>=matchday?"✓":matchday}</span><p><strong>{index===0?"Debut":index===2?"Revisión":index===4?"Recta final":index===5?"Veredicto":"Jornada clave"}</strong><small>J{matchday}</small></p></article>)}</div></section>
-    <section className="career-squad-preview"><div className="section-title"><div><p className="eyebrow">PLANTILLA HEREDADA</p><h2>La base de tu proyecto</h2><p>{squad.length || career.squadSize} jugadores del equipo real, sin exclusividad frente a otros mánagers.</p></div><button className="text-button" onClick={() => notify("Plantilla completa de Carrera")}>Ver plantilla completa →</button></div><div>{squad.slice(0,6).map((player)=><article key={player.id}><span>{player.initials}</span><p><strong>{player.name}</strong><small>{player.position} · {player.value.toFixed(1).replace(".",",")} M</small></p><b>ORIGINAL</b></article>)}</div></section>
+    <section className="career-squad-preview"><div className="section-title"><div><p className="eyebrow">PLANTILLA HEREDADA</p><h2>La base de tu proyecto</h2><p>{squad.length || career.squadSize} jugadores del equipo real, sin exclusividad frente a otros mánagers.</p></div><button className="text-button" onClick={() => notify("Plantilla completa de Carrera")}>Ver plantilla completa →</button></div><div>{squad.slice(0,6).map((player)=><article key={player.id}><Avatar label={player.initials} photoUrl={player.photoUrl} /><p><strong>{player.name}</strong><small>{player.position} · {player.value.toFixed(1).replace(".",",")} M</small></p><b>ORIGINAL</b></article>)}</div></section>
   </section>;
 }
 
@@ -5376,7 +5382,7 @@ const trendActivityGroups: {
   },
 ];
 
-function TrendsView({ competition, setCompetition, query, setQuery, position, setPosition, leagues, rankingRows }: { competition: CompetitionName; setCompetition: (value: CompetitionName) => void; query: string; setQuery: (value: string) => void; position: string; setPosition: (value: string) => void; leagues: LeagueSummary[]; rankingRows: NexoLeagueRankingRow[] }) {
+function TrendsView({ competition, setCompetition, query, setQuery, position, setPosition, leagues, rankingRows, playerCatalog }: { competition: CompetitionName; setCompetition: (value: CompetitionName) => void; query: string; setQuery: (value: string) => void; position: string; setPosition: (value: string) => void; leagues: LeagueSummary[]; rankingRows: NexoLeagueRankingRow[]; playerCatalog: Record<CompetitionName, CompetitionPlayer[]> }) {
   const [fullRankingOpen, setFullRankingOpen] = useState(false);
   const [trends, setTrends] = useState<PlayerTrend[]>([]);
   const [trendsLoading, setTrendsLoading] = useState(true);
@@ -5388,7 +5394,8 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
     setTrendsLoading(true);
     loadNexoCompetitionTrends(competitionId)
       .then((rows) => {
-        if (current) setTrends(rows);
+        const photos = new Map(playerCatalog[competition].map((player) => [player.id, player.photoUrl]));
+        if (current) setTrends(rows.map((player) => ({ ...player, photoUrl: player.photoUrl ?? photos.get(player.id) })));
       })
       .catch(() => {
         if (current) setTrends([]);
@@ -5399,7 +5406,7 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
     return () => {
       current = false;
     };
-  }, [competitionId]);
+  }, [competition, competitionId, playerCatalog]);
   useEffect(() => {
     let current = true;
     setCareerTrendsLoading(true);
@@ -5564,7 +5571,7 @@ function TrendsView({ competition, setCompetition, query, setQuery, position, se
           {bestPerformance.map((player, index) => (
             <article key={player.id}>
               <div className="performance-rank">0{index + 1}</div>
-              <Avatar label={player.initials} />
+              <Avatar label={player.initials} photoUrl={player.photoUrl} />
               <div>
                 <small>
                   {player.position} · {player.club}
@@ -5652,7 +5659,7 @@ function FullPerformanceRankingDialog({ players, competition, onClose }: { playe
           {visible.map((player, index) => (
             <article key={player.id}>
               <b>{index + 1}</b>
-              <Avatar label={player.initials} />
+              <Avatar label={player.initials} photoUrl={player.photoUrl} />
               <p>
                 <strong>{player.name}</strong>
                 <small>
@@ -5750,7 +5757,7 @@ function LeagueActivityTrends({ trends }: { trends: PlayerTrend[] }) {
                 {leaders.map((player, index) => (
                   <div key={player.id}>
                     <b>{index + 1}</b>
-                    <Avatar label={player.initials} />
+                    <Avatar label={player.initials} photoUrl={player.photoUrl} />
                     <span>
                       <strong>{player.name}</strong>
                       <small>
@@ -5805,7 +5812,7 @@ function TrendPlayerRow({ player, rank }: { player: PlayerTrend; rank: number })
   return (
     <div className="trend-player-row">
       <b>{String(rank).padStart(2, "0")}</b>
-      <Avatar label={player.initials} />
+      <Avatar label={player.initials} photoUrl={player.photoUrl} />
       <div className="trend-player-name">
         <strong>{player.name}</strong>
         <small>
@@ -6840,10 +6847,7 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, par
                   .filter((player) => player.position === position)
                   .map((player) => (
                     <button className="pitch-player lineup-player" key={player.id} onClick={() => setDetailPlayerId(player.id)}>
-                      <span>
-                        {player.initials}
-                        {captainId === player.id && <b>C</b>}
-                      </span>
+                      <Avatar label={player.initials} photoUrl={player.photoUrl}>{captainId === player.id && <b>C</b>}</Avatar>
                       <strong>{player.name}</strong>
                       <small>{player.club}</small>
                     </button>
@@ -6866,7 +6870,7 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, par
               const activeOfferCount = backendEnabled ? (backendUserMarket?.receivedOffers ?? []).filter((offer) => offer.playerId === player.id && offer.status === "active" && Date.parse(offer.expiresAt) > Date.now()).length : (playerOffers[`${participationId}:${player.id}`] ?? []).filter((offer) => offer.status === "active" && offer.expiresAt > Date.now()).length;
               return (
                 <button className={`bench-player selectable-bench ${listed ? "listed" : ""}`} key={player.id} onClick={() => setManagedBenchPlayerId(player.id)}>
-                  <Avatar label={player.initials} />
+                  <Avatar label={player.initials} photoUrl={player.photoUrl} />
                   <span>
                     {player.name}
                     <small>
@@ -6887,7 +6891,7 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, par
             <p className="eyebrow">CAPITÁN</p>
             <p>El capitán obtiene el multiplicador que configure la liga.</p>
             <div className="captain-current">
-              <Avatar label={squad.players.find((player) => player.id === captainId)?.initials} />
+              <Avatar label={squad.players.find((player) => player.id === captainId)?.initials} photoUrl={squad.players.find((player) => player.id === captainId)?.photoUrl} />
               <div>
                 <small>CAPITÁN ACTUAL</small>
                 <strong>{squad.players.find((player) => player.id === captainId)?.name}</strong>
@@ -7399,10 +7403,7 @@ function FantasyMatchdayBuilder({ competition, players, fixtures, previousLineup
                   .filter((player) => player.position === position)
                   .map((player) => (
                     <button className="pitch-player lineup-player" key={player.id} onClick={() => setDetailPlayerId(player.id)}>
-                      <span>
-                        {player.initials}
-                        {captainId === player.id && <b>C</b>}
-                      </span>
+                      <Avatar label={player.initials} photoUrl={player.photoUrl}>{captainId === player.id && <b>C</b>}</Avatar>
                       <strong>{player.name}</strong>
                       <small>Ver ficha</small>
                     </button>
@@ -7432,7 +7433,7 @@ function FantasyMatchdayBuilder({ competition, players, fixtures, previousLineup
                     setSaved(false);
                   }}
                 >
-                  <Avatar label={player.initials} />
+                  <Avatar label={player.initials} photoUrl={player.photoUrl} />
                   <span>{player.name}</span>
                 </button>
               ))}
@@ -7470,7 +7471,7 @@ function FantasyMatchdayBuilder({ competition, players, fixtures, previousLineup
               const disabled = !selected && (player.price > remaining || selectedPlayers.filter((item) => item.position === player.position).length >= formations[formation][player.position]);
               return (
                 <button className={selected ? "selected" : ""} disabled={disabled} key={player.id} onClick={() => addPlayer(player)}>
-                  <Avatar label={player.initials} />
+                  <Avatar label={player.initials} photoUrl={player.photoUrl} />
                   <span>
                     <strong>{player.name}</strong>
                     <small>{player.club}</small>
@@ -7604,7 +7605,7 @@ function FantasyFormationChangeDialog({ currentFormation, targetFormation, targe
         <div className="formation-player-grid fantasy-formation-player-grid">
           {candidates.map((player) => (
             <button disabled={!removing && player.price > remaining} key={player.id} onClick={() => choose(player)}>
-              <Avatar label={player.initials} />
+              <Avatar label={player.initials} photoUrl={player.photoUrl} />
               <div>
                 <strong>{player.name}</strong>
                 <small>
@@ -7746,10 +7747,7 @@ function LockedTeamMatchdayView({ squad, competition, history, allHistory, edita
                     const score = scoreFor(player);
                     return (
                       <button className="pitch-player lineup-player locked-player" key={player.id} onClick={() => setSelectedPlayer(player)}>
-                        <span>
-                          {player.initials}
-                          {captain?.id === player.id && <b>C</b>}
-                        </span>
+                        <Avatar label={player.initials} photoUrl={player.photoUrl}>{captain?.id === player.id && <b>C</b>}</Avatar>
                         <strong>{player.name}</strong>
                         <small className={score >= 0 ? "positive" : "negative"}>
                           {score > 0 ? "+" : ""}
@@ -7771,7 +7769,7 @@ function LockedTeamMatchdayView({ squad, competition, history, allHistory, edita
             const score = scoreFor(player);
             return (
               <button key={player.id} onClick={() => setSelectedPlayer(player)}>
-                <Avatar label={player.initials} />
+                <Avatar label={player.initials} photoUrl={player.photoUrl} />
                 <span>
                   <strong>{player.name}</strong>
                   <small>
@@ -8534,7 +8532,7 @@ function PlayerDetailSheet({ player, competition, fixtures = [], captain = false
                 </div>
                 {recommendation && (
                   <div className="recommended-player">
-                    <Avatar label={recommendation.player.initials} />
+                    <Avatar label={recommendation.player.initials} photoUrl={recommendation.player.photoUrl} />
                     <div>
                       <strong>{recommendation.player.name}</strong>
                       <small>
@@ -8575,7 +8573,7 @@ function PlayerDetailSheet({ player, competition, fixtures = [], captain = false
                       const candidateStats = playerDemoStats(candidate.id);
                       return (
                         <button key={candidate.id} onClick={() => onSwap?.(candidate.id)}>
-                          <Avatar label={candidate.initials} />
+                          <Avatar label={candidate.initials} photoUrl={candidate.photoUrl} />
                           <div>
                             <strong>{candidate.name}</strong>
                             <small>
@@ -8658,7 +8656,7 @@ function FormationChangeDialog({ currentFormation, targetFormation, targetQuotas
         <div className="formation-player-grid">
           {candidates.map((player) => (
             <button key={player.id} onClick={() => choose(player)}>
-              <Avatar label={player.initials} />
+              <Avatar label={player.initials} photoUrl={player.photoUrl} />
               <div>
                 <strong>{player.name}</strong>
                 <small>
@@ -9051,7 +9049,7 @@ function LeagueMarketView({ league, players, squad, budget, rules, backendEnable
           </div>
           {backendEnabled ? userMarket?.listings.filter((listing) => listing.mine).map((listing) => (
             <article key={listing.listingId}>
-              <Avatar label={listing.initials} />
+              <Avatar label={listing.initials} photoUrl={listing.photoUrl} />
               <div>
                 <strong>{listing.name}</strong>
                 <small>{listing.position} · {listing.club}</small>
@@ -9064,7 +9062,7 @@ function LeagueMarketView({ league, players, squad, budget, rules, backendEnable
             </article>
           )) : ownedListings.map(({ player, contract }) => (
             <article key={player.id}>
-              <Avatar label={player.initials} />
+              <Avatar label={player.initials} photoUrl={player.photoUrl} />
               <div>
                 <strong>{player.name}</strong>
                 <small>
@@ -9115,7 +9113,7 @@ function LeagueMarketView({ league, players, squad, budget, rules, backendEnable
               </div>
               {bidPlayers.map(({ bid, player }) => (
                 <article key={player.id}>
-                  <Avatar label={player.initials} />
+                  <Avatar label={player.initials} photoUrl={player.photoUrl} />
                   <div>
                     <strong>{player.name}</strong>
                     <small>
@@ -9169,7 +9167,7 @@ function LeagueMarketView({ league, players, squad, budget, rules, backendEnable
             const unavailable = player.availabilityStatus === "out_of_competition";
             return (
               <article className={`market-player ${userListing ? "user-listing" : ""} ${unavailable ? "unavailable" : ""}`} key={`${userListing ? "user" : "game"}_${player.id}`}>
-                <Avatar label={player.initials} />
+                <Avatar label={player.initials} photoUrl={player.photoUrl} />
                 <div className="player-identity">
                   <strong>{player.name}</strong>
                   <small>
@@ -9250,7 +9248,7 @@ function BackendUserOffersCenter({ offers, onRespond, onCancel }: { offers: Nexo
           <div className="market-offers-summary"><div><p className="eyebrow">PROPUESTAS ACTIVAS</p><h3>{activeReceived.length} ofertas sobre {receivedGroups.length} jugadores</h3><p>Cada jugador aparece una vez, con todas sus propuestas agrupadas.</p></div><span>{activeReceived.length}</span></div>
           {receivedGroups.length ? <div className="received-offer-groups">{receivedGroups.map(({ listing, offers: playerOffers }) => (
             <article className="received-offer-group" key={listing.playerId}>
-              <header><Avatar label={listing.initials} /><div><strong>{listing.name}</strong><small>{listing.position} · {listing.club}</small></div><span>{playerOffers.length} {playerOffers.length === 1 ? "oferta" : "ofertas"}</span></header>
+              <header><Avatar label={listing.initials} photoUrl={listing.photoUrl} /><div><strong>{listing.name}</strong><small>{listing.position} · {listing.club}</small></div><span>{playerOffers.length} {playerOffers.length === 1 ? "oferta" : "ofertas"}</span></header>
               <div className="grouped-offer-list">{playerOffers.map((offer) => (
                 <div className="grouped-offer-row" key={offer.offerId}>
                   <div className="market-offer-bidder"><span>{offer.bidderInitials ?? "R"}</span><p><strong>{offer.bidderName ?? offer.bidderTeamName ?? "Usuario rival"}</strong><small>{offer.bidderTeamName ?? "Participante de la liga"}</small></p></div>
@@ -9291,7 +9289,7 @@ function UserMarketOfferDialog({ listing, existingOffer, onClose, onSave }: { li
     <div className="dialog-backdrop bid-dialog-backdrop" role="presentation">
       <section className="team-dialog bid-dialog" role="dialog" aria-modal="true" aria-labelledby="user-offer-title">
         <div className="dialog-header"><div><p className="eyebrow">{existingOffer ? "MODIFICAR OFERTA" : "OFERTA A OTRO USUARIO"}</p><h2 id="user-offer-title">{listing.name}</h2></div><button className="dialog-close" onClick={onClose} aria-label="Cerrar">×</button></div>
-        <div className="bid-player-summary"><Avatar label={listing.initials} /><div><strong>{listing.name}</strong><small>{listing.position} · {listing.club} · vende {listing.sellerTeamName}</small></div><span><small>PRECIO SOLICITADO</small><b>{listing.askingPrice.toFixed(1).replace(".", ",")} M</b></span></div>
+        <div className="bid-player-summary"><Avatar label={listing.initials} photoUrl={listing.photoUrl} /><div><strong>{listing.name}</strong><small>{listing.position} · {listing.club} · vende {listing.sellerTeamName}</small></div><span><small>PRECIO SOLICITADO</small><b>{listing.askingPrice.toFixed(1).replace(".", ",")} M</b></span></div>
         <form onSubmit={submit}><label className="bid-amount-field"><span>Tu oferta</span><div><input inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setError(""); }} autoFocus /><b>M</b></div><small>No puede ser inferior al precio solicitado.</small></label><p className="bid-privacy-note">La oferta será privada y válida durante 24 horas. El importe quedará retenido hasta que se acepte, se cancele o caduque.</p>{error && <p className="form-error" role="alert">{error}</p>}<div className="dialog-actions"><button type="button" className="secondary-button" onClick={onClose}>Cancelar</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "Guardando…" : existingOffer ? "Guardar cambio" : "Enviar oferta"}</button></div></form>
       </section>
     </div>
@@ -9457,7 +9455,7 @@ function MarketOffersCenter({ receivedOffers, sentOffers, onRespondReceived, onM
               {receivedGroups.map(({ player, offers }) => (
                 <article className="received-offer-group" key={player.id}>
                   <header>
-                    <Avatar label={player.initials} />
+                    <Avatar label={player.initials} photoUrl={player.photoUrl} />
                     <div>
                       <strong>{player.name}</strong>
                       <small>
@@ -9723,7 +9721,7 @@ function BidDialog({ player, existingBid, committed, budget, spendingLimit, debt
           </button>
         </div>
         <div className="bid-player-summary">
-          <Avatar label={player.initials} />
+          <Avatar label={player.initials} photoUrl={player.photoUrl} />
           <div>
             <strong>{player.name}</strong>
             <small>
@@ -10010,7 +10008,7 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
                             const points = finalized ? pointsFor(player, selected.number) : null;
                             return (
                               <button key={player.id} onClick={() => setSelectedPlayer(player)}>
-                                <Avatar label={player.initials} />
+                                <Avatar label={player.initials} photoUrl={player.photoUrl} />
                                 <span>
                                   <strong>{player.name}</strong>
                                   <small>{isStarter ? "TITULAR · SUMA" : "BANQUILLO · NO SUMA"}</small>
@@ -10138,7 +10136,7 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
                 </div>
                 {scoredPlayers.map(({ player, score }) => (
                   <button key={player.id} onClick={() => setSelectedPlayer(player)}>
-                    <Avatar label={player.initials} />
+                    <Avatar label={player.initials} photoUrl={player.photoUrl} />
                     <span>
                       <strong>
                         {player.name}
@@ -10163,7 +10161,7 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
               </div>
               {scoredBench.map(({ player, score }) => (
                 <button key={player.id} onClick={() => setSelectedPlayer(player)}>
-                  <Avatar label={player.initials} />
+                  <Avatar label={player.initials} photoUrl={player.photoUrl} />
                   <span>
                     <strong>{player.name}</strong>
                     <small>
@@ -10530,7 +10528,7 @@ function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchase
               </div>
               <div className="rival-preview-avatars">
                 {starters.slice(0, 5).map((player) => (
-                  <Avatar key={player.id} label={player.initials} />
+                  <Avatar key={player.id} label={player.initials} photoUrl={player.photoUrl} />
                 ))}
                 <span>+6</span>
               </div>
@@ -10570,10 +10568,7 @@ function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchase
                             const sent = sentOffers.find((offer) => offer.targetTeamId === rival.id && offer.targetPlayerId === player.id && offer.status === "active" && offer.expiresAt > Date.now());
                             return (
                               <button type="button" className="rival-pitch-player" key={player.id} onClick={() => setOfferPlayer(player)}>
-                                <span>
-                                  {player.initials}
-                                  {captain?.id === player.id && <b>C</b>}
-                                </span>
+                                <Avatar label={player.initials} photoUrl={player.photoUrl}>{captain?.id === player.id && <b>C</b>}</Avatar>
                                 <strong>{player.name}</strong>
                                 <small>{sent ? "OFERTA HECHA" : "HACER OFERTA"}</small>
                               </button>
@@ -10592,7 +10587,7 @@ function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchase
                     const sent = sentOffers.find((offer) => offer.targetTeamId === rival.id && offer.targetPlayerId === player.id && offer.status === "active" && offer.expiresAt > Date.now());
                     return (
                       <button type="button" className="rival-bench-player" key={player.id} onClick={() => setOfferPlayer(player)}>
-                        <Avatar label={player.initials} />
+                        <Avatar label={player.initials} photoUrl={player.photoUrl} />
                         <span>
                           <strong>{player.name}</strong>
                           <small>
@@ -10945,7 +10940,7 @@ function RivalOfferDialog({ player, rival, budget, matchdayStartAt, backendContr
           </button>
         </div>
         <div className="bid-player-summary">
-          <Avatar label={player.initials} />
+          <Avatar label={player.initials} photoUrl={player.photoUrl} />
           <div>
             <strong>{player.name}</strong>
             <small>
@@ -11911,7 +11906,7 @@ function SquadAllocationScreen({ presentation, onFinish }: { presentation: Alloc
           </div>
           {bench.map((player) => (
             <div className="allocated-bench-player" key={player.id}>
-              <Avatar label={player.initials} />
+              <Avatar label={player.initials} photoUrl={player.photoUrl} />
               <div>
                 <strong>{player.name}</strong>
                 <small>
@@ -11941,7 +11936,7 @@ function AllocationPlayerRow({ players }: { players: InitialSquadPlayer[] }) {
     <div className="player-row">
       {players.map((player) => (
         <div className="pitch-player allocated-player" key={player.id}>
-          <span>{player.initials}</span>
+          <Avatar label={player.initials} photoUrl={player.photoUrl} />
           <strong>{player.name}</strong>
           <small>{player.value.toFixed(1).replace(".", ",")} M</small>
         </div>
@@ -12986,7 +12981,7 @@ function AdminView({ marketRules, setMarketRules, clubRules, setClubRules, caree
                 const jornadaPoints = simulationEnabled ? (backendPlayerPoints[player.id] ?? 0) : calculatePlayerPoints(demoPlayerMatchStats(`${player.id}_j${adminMatchday}`, player.position), player.position, scoringRules).total;
                 return (
                   <article key={player.id}>
-                    <Avatar label={player.initials} />
+                    <Avatar label={player.initials} photoUrl={player.photoUrl} />
                     <div>
                       <strong>{player.name}</strong>
                       <small>{player.active === false ? "FUERA DE LA COMPETICIÓN" : "ACTIVO"} · {player.id}</small>

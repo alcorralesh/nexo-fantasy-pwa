@@ -58,6 +58,7 @@ export async function loadNexoCompetitionTrends(competitionId: string): Promise<
     position: row.position as PlayerTrend["position"],
     club: String(row.club),
     value: Number(row.value),
+    photoUrl: row.photo_url ? String(row.photo_url) : undefined,
     competition: competitionNames[competitionId] ?? "Primera",
     catalogVersion: "backend",
     changePercent: Number(row.change_percent),
