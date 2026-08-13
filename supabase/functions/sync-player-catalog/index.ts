@@ -93,6 +93,12 @@ function summarize(players: Player[], existing: ExistingPlayer[]) {
   return { additions, updates, deactivations, reactivations, competitionChanges, clubChanges, positionChanges, unchanged: players.length - additions - updates, total: players.length, competitions };
 }
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
+  try { return JSON.stringify(error); } catch { return "Error inesperado"; }
+}
+
 Deno.serve(async (request) => {
   const origin = request.headers.get("Origin") ?? "";
   if (origin && !allowedOrigins.has(origin)) return json(request, { error: "Origen no permitido" }, 403);
@@ -124,7 +130,8 @@ Deno.serve(async (request) => {
     await admin.from("player_catalog_sync_jobs").update({ status: "succeeded", catalog_version: catalogVersion, summary, finished_at: new Date().toISOString() }).eq("id", jobId);
     return json(request, { jobId, mode, catalogVersion, summary });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Error inesperado";
+    const message = errorMessage(error);
+    console.error("sync-player-catalog failed", { jobId, message });
     if (admin && jobId) await admin.from("player_catalog_sync_jobs").update({ status: "failed", error_message: message, finished_at: new Date().toISOString() }).eq("id", jobId);
     return json(request, { error: message }, 500);
   }

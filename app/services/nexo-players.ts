@@ -118,7 +118,17 @@ export async function updateNexoPlayer(player: CompetitionPlayer, active = playe
 export async function runNexoPlayerCatalogSync(mode: "preview" | "apply"): Promise<CatalogSyncResult> {
   const client = requireClient();
   const { data, error } = await client.functions.invoke("sync-player-catalog", { body: { mode } });
-  if (error) throw new Error((data as { error?: string } | null)?.error ?? error.message);
+  if (error) {
+    let message = (data as { error?: string } | null)?.error ?? error.message;
+    const context = (error as { context?: Response }).context;
+    if (context) {
+      try {
+        const body = await context.clone().json() as { error?: string };
+        if (body.error) message = body.error;
+      } catch { /* Keep the SDK message when the response has no JSON body. */ }
+    }
+    throw new Error(message);
+  }
   if ((data as { error?: string })?.error) throw new Error((data as { error: string }).error);
   if (mode === "apply" && typeof window !== "undefined") window.localStorage.removeItem(catalogCacheKey);
   return data as CatalogSyncResult;
