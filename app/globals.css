@@ -1102,3 +1102,22 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(127, 183, 31
 .lab-observer-lineup article > span { overflow: hidden; }
 .lab-observer-lineup article > span > img { width: 100%; height: 100%; object-fit: cover; }
 .lab-observer-lineup article > span > b { z-index: 2; }
+
+/* Escala tipográfica legible para móvil. Evita los textos de 5–8 px heredados del prototipo. */
+@media (max-width: 600px) {
+  html { font-size: 16px; }
+  body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  p:not(.eyebrow), li { font-size: 12px !important; line-height: 1.45 !important; }
+  small { font-size: 10px !important; line-height: 1.35 !important; }
+  .eyebrow { font-size: 9px !important; line-height: 1.3 !important; }
+  button, input, select, textarea, label { font-size: 12px !important; }
+  .bottom-nav button small, .league-mobile-nav button small { font-size: 10px !important; }
+  .pitch-player strong, .player-identity strong, .trend-player-name strong { font-size: 11px !important; }
+  .pitch-player small, .player-identity small, .trend-player-name small { font-size: 9px !important; }
+  .section-title h2, .league-panel .section-title h2 { font-size: 18px !important; }
+  .section-title .text-button, .league-panel .section-title .text-button { font-size: 11px !important; }
+  .league-context-copy p:last-child { font-size: 10px !important; }
+  .career-calendar-strip small { font-size: 8px !important; }
+  .career-calendar-strip strong { font-size: 10px !important; }
+  .career-calendar-strip em { font-size: 8px !important; }
+}
