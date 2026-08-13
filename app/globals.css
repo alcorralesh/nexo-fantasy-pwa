@@ -1121,3 +1121,211 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(127, 183, 31
   .career-calendar-strip strong { font-size: 10px !important; }
   .career-calendar-strip em { font-size: 8px !important; }
 }
+
+/* Las vistas operativas de una liga necesitan una escala propia en móvil. */
+@media (max-width: 600px) {
+  /* Actividad */
+  .league-content .league-activity p {
+    min-height: 68px;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 10px;
+    padding-block: 9px;
+  }
+  .league-content .league-activity p > span {
+    width: 31px;
+    height: 31px;
+    font-size: 10px;
+  }
+  .league-content .league-activity p strong {
+    font-size: 13px !important;
+    line-height: 1.3;
+  }
+  .league-content .league-activity p small {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+  }
+  .league-content .league-activity-empty {
+    min-height: 92px !important;
+    padding: 16px;
+    font-size: 12px !important;
+  }
+  .league-content .league-activity-trends .section-title > div > p:last-child {
+    font-size: 11px !important;
+  }
+
+  /* Mercado, pujas, ofertas e historial */
+  .league-content .market-shortcuts button {
+    min-height: 58px;
+    font-size: 13px !important;
+  }
+  .league-content .market-shortcuts button b,
+  .league-content .market-renewal-card small,
+  .league-content .market-renewal-card > span,
+  .league-content .market-balance-box > span {
+    font-size: 10px !important;
+    line-height: 1.35;
+  }
+  .league-content .market-player {
+    min-height: 112px;
+  }
+  .league-content .player-identity strong {
+    font-size: 14px !important;
+  }
+  .league-content .player-identity small,
+  .league-content .market-points small,
+  .league-content .market-price small,
+  .league-content .active-bids-list > article > div:first-of-type small,
+  .league-content .active-bids-list article > span small,
+  .league-content .active-bids-list article > b small {
+    font-size: 10px !important;
+  }
+  .league-content .player-identity b,
+  .league-content .market-unavailable-label {
+    font-size: 9px !important;
+  }
+  .league-content .market-points strong,
+  .league-content .market-price strong {
+    font-size: 16px;
+  }
+  .league-content .offer-button,
+  .league-content .active-bids-list article > div:last-child button,
+  .league-content .market-offer-actions button,
+  .league-content .market-accept-confirm button,
+  .league-content .market-offers-tabs button {
+    font-size: 12px !important;
+  }
+  .league-content .bid-kpis small,
+  .league-content .bid-kpis span,
+  .league-content .active-bids-list > article > div:first-of-type strong,
+  .league-content .active-bids-list article > span,
+  .league-content .active-bids-list article > b,
+  .league-content .bid-resolution-note strong,
+  .league-content .bid-resolution-note p {
+    font-size: 11px !important;
+    line-height: 1.35;
+  }
+  .league-content .market-offers-summary p:last-child,
+  .league-content .market-offer-player strong,
+  .league-content .market-offer-bidder strong,
+  .league-content .market-offer-player small,
+  .league-content .market-offer-bidder small,
+  .league-content .market-offer-amount small,
+  .league-content .market-offer-validity small,
+  .league-content .market-offer-validity strong,
+  .league-content .market-offer-validity span,
+  .league-content .market-accept-confirm p,
+  .league-content .closed-offers summary,
+  .league-content .closed-offers p {
+    font-size: 11px !important;
+    line-height: 1.4;
+  }
+  .league-content .market-offer-player em {
+    font-size: 9px !important;
+  }
+  .league-content .market-history-kpis small,
+  .league-content .market-history-kpis span,
+  .league-content .market-history-toolbar select,
+  .league-content .market-history-head,
+  .league-content .market-history-list article > div strong,
+  .league-content .market-history-list article > div small,
+  .league-content .market-history-list article > b,
+  .league-content .market-history-list article > span:not(.history-type),
+  .league-content .market-history-list article > strong,
+  .league-content .market-history-list time,
+  .league-content .market-history-list article > em,
+  .league-content .market-history-view > footer {
+    font-size: 10px !important;
+    line-height: 1.35;
+  }
+
+  /* Jornada y calendario */
+  .league-content .matchday-status {
+    font-size: 10px !important;
+  }
+  .league-content .matchday-selector button {
+    min-height: 94px;
+    padding: 12px;
+  }
+  .league-content .matchday-selector small,
+  .league-content .matchday-selector span,
+  .league-content .matchday-selector i {
+    font-size: 10px !important;
+    line-height: 1.3;
+  }
+  .league-content .matchday-view-tabs {
+    height: 70px;
+  }
+  .league-content .matchday-view-tabs strong {
+    font-size: 12px !important;
+  }
+  .league-content .matchday-view-tabs small {
+    font-size: 10px !important;
+  }
+  .league-content .matchday-calendar > header {
+    min-height: 104px;
+    padding: 17px;
+  }
+  .league-content .matchday-calendar > header p:last-child,
+  .league-content .matchday-calendar > header > span {
+    font-size: 11px !important;
+    line-height: 1.4;
+  }
+  .league-content .fixture-calendar-list > article > button {
+    min-height: 96px;
+  }
+  .league-content .fixture-calendar-list time,
+  .league-content .calendar-team strong,
+  .league-content .calendar-score em,
+  .league-content .calendar-my-players span,
+  .league-content .fixture-squad-detail > div > strong,
+  .league-content .fixture-squad-detail button strong,
+  .league-content .fixture-squad-detail button small,
+  .league-content .fixture-squad-detail button em,
+  .league-content .fixture-squad-detail button > b,
+  .league-content .calendar-no-players,
+  .league-content .calendar-data-note strong,
+  .league-content .calendar-data-note p {
+    font-size: 11px !important;
+    line-height: 1.35;
+  }
+  .league-content .calendar-team > span {
+    width: 38px;
+    height: 41px;
+    font-size: 10px;
+  }
+  .league-content .calendar-my-players strong {
+    font-size: 16px;
+  }
+  .league-content .matchday-pending-state p,
+  .league-content .matchday-pending-state > div span,
+  .league-content .schedule-exception-notice p,
+  .league-content .schedule-exception-notice strong,
+  .league-content .schedule-exception-notice > b,
+  .league-content .overlapping-matchdays article small,
+  .league-content .overlapping-matchdays article strong,
+  .league-content .overlapping-matchdays article p,
+  .league-content .overlapping-matchdays article button,
+  .league-content .overlapping-matchdays footer span,
+  .league-content .overlapping-matchdays footer p {
+    font-size: 11px !important;
+    line-height: 1.4;
+  }
+  .league-content .matchday-score-summary small,
+  .league-content .matchday-score-summary span,
+  .league-content .matchday-score-summary > p strong,
+  .league-content .matchday-points-head,
+  .league-content .matchday-player-points > button strong,
+  .league-content .matchday-player-points > button small,
+  .league-content .matchday-player-points > button em,
+  .league-content .matchday-player-points > button i,
+  .league-content .matchday-bench-card strong,
+  .league-content .matchday-bench-card small,
+  .league-content .matchday-bench-card footer,
+  .league-content .matchday-settlement-receipt > div p:last-child,
+  .league-content .matchday-settlement-receipt > footer {
+    font-size: 11px !important;
+    line-height: 1.35;
+  }
+}
