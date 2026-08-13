@@ -18,7 +18,42 @@ function responseHeaders(request: Request) {
   return { "Access-Control-Allow-Origin": allowedOrigins.has(origin) ? origin : "https://alcorralesh.github.io", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Cache-Control": "no-store", "Vary": "Origin" };
 }
 function json(request: Request, body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { ...responseHeaders(request), "Content-Type": "application/json" } }); }
-async function getText(url: string) { const response = await fetch(url, { headers: { "user-agent": "NexoFantasyCalendar/1.0" } }); if (!response.ok) throw new Error(`${response.status} al consultar ${url}`); return response.text(); }
+const retryableSourceStatuses = new Set([408, 425, 429, 500, 502, 503, 504]);
+const sourceRequestAttempts = 4;
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function getText(url: string) {
+  let lastError = "Error desconocido";
+  for (let attempt = 1; attempt <= sourceRequestAttempts; attempt++) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "accept": "text/html,application/xhtml+xml",
+          "accept-language": "es-ES,es;q=0.9",
+          "user-agent": "NexoFantasyCalendar/1.1",
+        },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (response.ok) return response.text();
+      lastError = `${response.status} al consultar ${url}`;
+      if (!retryableSourceStatuses.has(response.status) || attempt === sourceRequestAttempts) break;
+      const retryAfter = Number(response.headers.get("retry-after"));
+      const delay = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1_000, 15_000)
+        : 700 * (2 ** (attempt - 1)) + Math.floor(Math.random() * 350);
+      await response.body?.cancel();
+      await wait(delay);
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "La fuente oficial no respondió";
+      if (attempt === sourceRequestAttempts) break;
+      await wait(700 * (2 ** (attempt - 1)) + Math.floor(Math.random() * 350));
+    }
+  }
+  throw new Error(`La fuente oficial no respondió tras ${sourceRequestAttempts} intentos: ${lastError}`);
+}
 async function mapLimit<T, R>(items: T[], limit: number, worker: (item: T) => Promise<R>) { const output = new Array<R>(items.length); let cursor = 0; async function next() { while (cursor < items.length) { const index = cursor++; output[index] = await worker(items[index]); } } await Promise.all(Array.from({ length: Math.min(limit, items.length) }, next)); return output; }
 function name(team: SourceTeam) { return team.nickname ?? team.boundname ?? team.name ?? "Equipo pendiente"; }
 function matchStatus(value = "") { const normalized = value.toLowerCase(); if (normalized.includes("postpon") || normalized.includes("suspend")) return "postponed"; if (normalized.includes("cancel")) return "cancelled"; if (normalized.includes("live") || normalized.includes("playing") || normalized.includes("half")) return "live"; if (normalized.includes("postmatch") || normalized.includes("finish") || normalized.includes("final")) return "final"; return "scheduled"; }
@@ -70,7 +105,9 @@ Deno.serve(async (request) => {
     if (jobError) return json(request, { error: jobError.code === "23505" ? "Ya hay una sincronización en curso" : jobError.message }, jobError.code === "23505" ? 409 : 500);
     jobId = job.id;
     const tasks = competitions.flatMap((competition) => Array.from({ length: competition.rounds }, (_, index) => ({ competition, matchday: index + 1 })));
-    const rounds = await mapLimit(tasks, 12, ({ competition, matchday }) => loadRound(competition, matchday));
+    // LALIGA puede responder con 429/502 cuando recibe demasiadas peticiones simultáneas.
+    // Se limita la concurrencia para que la sincronización completa sea estable también en el plan gratuito.
+    const rounds = await mapLimit(tasks, 6, ({ competition, matchday }) => loadRound(competition, matchday));
     const fixtures = rounds.flat();
     const { data: existing, error: existingError } = await admin.from("match_fixtures").select("provider_id,kickoff_at,status,home_score,away_score").eq("season", season);
     if (existingError) throw existingError;
