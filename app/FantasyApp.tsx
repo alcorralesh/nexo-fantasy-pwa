@@ -1999,7 +1999,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
       const id = sessionUser?.id === "demo_user"
         ? `career_demo_${crypto.randomUUID()}`
         : await createNexoCareer({ clubId: clubContextId, sportsClubId: input.sportsClub.id, difficulty: input.difficulty });
-      const career: NexoCareer = {
+      const optimisticCareer: NexoCareer = {
         id,
         clubId: clubContextId,
         competition: competitionName,
@@ -2018,13 +2018,22 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
         squadSize: input.sportsClub.playerCount,
         createdAt: new Date().toISOString(),
       };
-      setCareers((current) => [career, ...current.filter((item) => item.id !== id)]);
+      // En backend, la carrera devuelta es la fuente de verdad. Esto evita mostrar
+      // el equipo elegido en el formulario sobre el id de una carrera ya existente.
+      let createdCareer = optimisticCareer;
+      if (sessionUser?.id !== "demo_user") {
+        const persistedCareers = await loadNexoCareers();
+        createdCareer = persistedCareers.find((item) => item.id === id) ?? optimisticCareer;
+        setCareers(persistedCareers);
+      } else {
+        setCareers((current) => [optimisticCareer, ...current.filter((item) => item.id !== id)]);
+      }
       if (costsCoins) setCoins((current) => current - careerRules.extraCareerCoinCost);
       setCareerCreatorOpen(false);
       setSelectedCareerId(id);
       setActive("carrera");
       window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
-      notify(`Tu carrera con ${career.sportsClubName} ya ha comenzado`);
+      notify(`Tu carrera con ${createdCareer.sportsClubName} ya ha comenzado`);
       return null;
     } catch (error) {
       return error instanceof Error ? error.message : "No se ha podido iniciar la carrera.";
@@ -3279,7 +3288,7 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
           {active === "equipo" && <TeamView teamId={teamId} setTeamId={setTeamId} teams={teams} leagues={leagues} participations={participations} fantasyEvents={fantasyEvents} careers={careers} clubRules={clubRules} clubIdentityMeta={clubIdentityMeta} onUpdateClub={updateClubIdentity} competition={competition} setCompetition={setCompetition} freeLimit={initialData.rules.freeTeamsPerCompetition} onCreateTeam={() => setTeamCreatorOpen(true)} onOpenLeague={openLeague} onOpenCareer={(careerId) => { setSelectedCareerId(careerId); setActive("carrera"); }} onCreateCareer={() => setCareerCreatorOpen(true)} onBrowseLeagues={() => navigate("ligas")} />}
           {active === "tendencias" && <TrendsView competition={competition} setCompetition={setCompetition} query={query} setQuery={setQuery} position={position} setPosition={setPosition} leagues={leagues} rankingRows={Object.values(leagueRankings).flat()} />}
           {active === "ligas" && <LeaguesView leagues={leagues} participations={participations} featuredLeagueIds={featuredLeagueIds} onToggleFeaturedLeague={toggleFeaturedLeague} fantasyEvents={fantasyEvents.filter((event) => event.status !== "draft" && event.status !== "finished")} onOpenLeague={openLeague} onJoinPublic={() => setPublicJoinOpen(true)} onJoinFantasy={openFantasyJoin} onCreatePrivate={() => setPrivateLeagueCreatorOpen(true)} onCareer={() => setCareerCreatorOpen(true)} onJoinCode={findPrivateLeagueByCode} joinCode={joinCode} setJoinCode={setJoinCode} notify={notify} />}
-          {active === "carrera" && <ManagerCareerView career={careers.find((item) => item.id === selectedCareerId) ?? careers[0]} players={adminPlayerCatalog} fixtures={matchFixtures} rules={careerRules} backendEnabled={sessionUser?.id !== "demo_user"} onCareerChanged={refreshBackendCareers} onBack={() => navigate("equipo")} onNewCareer={() => setCareerCreatorOpen(true)} notify={notify} />}
+          {active === "carrera" && <ManagerCareerView career={selectedCareerId ? careers.find((item) => item.id === selectedCareerId) : undefined} players={adminPlayerCatalog} fixtures={matchFixtures} rules={careerRules} backendEnabled={sessionUser?.id !== "demo_user"} onCareerChanged={refreshBackendCareers} onBack={() => navigate("equipo")} onNewCareer={() => setCareerCreatorOpen(true)} notify={notify} />}
           {active === "liga" && leagues.find((item) => item.id === selectedLeagueId) && (
             <LeagueDetailView
               league={leagues.find((item) => item.id === selectedLeagueId)!}
@@ -4464,6 +4473,7 @@ function FeaturedFantasyEvent({ event, joined, onJoin, onOpen }: { event: Fantas
 function Dashboard({ userName, competition, setCompetition, teamId, team, participations, clubMotto, leagues, fixtures, careers, featuredLeagueIds, onToggleFeaturedLeague, onOpenLeague, onOpenCareer, onCreateCareer, featuredFantasyEvent, onJoinFantasy, navigate }: { userName: string; competition: CompetitionName; setCompetition: (value: CompetitionName) => void; teamId: string; team: string; participations: LeagueParticipation[]; clubMotto?: string; leagues: LeagueSummary[]; fixtures: MatchFixture[]; careers: NexoCareer[]; featuredLeagueIds: string[]; onToggleFeaturedLeague: (leagueId: string) => void; onOpenLeague: (leagueId: string) => void; onOpenCareer: (careerId: string) => void; onCreateCareer: () => void; featuredFantasyEvent?: FantasyEvent; onJoinFantasy: (eventId?: string) => void; navigate: (value: Section) => void }) {
   const [clubActivity, setClubActivity] = useState<NexoClubActivity[]>([]);
   const [clubActivityLoading, setClubActivityLoading] = useState(true);
+  const [homeCareerIds, setHomeCareerIds] = useState<Partial<Record<CompetitionName, string>>>({});
   const featuredLeagues = leagues.filter((league) => featuredLeagueIds.includes(league.id)).slice(0, 4);
   const clubParticipations = participations.filter((item) => item.teamId === teamId);
   const rankedPositions = clubParticipations
@@ -4472,7 +4482,32 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
     .filter((rank) => Number.isFinite(rank) && rank > 0);
   const bestPosition = rankedPositions.length ? Math.min(...rankedPositions) : null;
   const closedFixtures = fixtures.filter((fixture) => fixture.competition === competition && fixture.status === "final").length;
-  const activeCareer = careers.find((career) => career.competition === competition && career.status === "active");
+  const activeCareers = careers
+    .filter((career) => career.competition === competition && career.status === "active")
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+  const activeCareer = activeCareers.find((career) => career.id === homeCareerIds[competition]) ?? activeCareers[0];
+  const activeCareerIndex = activeCareer ? activeCareers.findIndex((career) => career.id === activeCareer.id) : -1;
+  useEffect(() => {
+    if (typeof window === "undefined" || activeCareers.length === 0) return;
+    const storedId = window.localStorage.getItem(`nexo:last-career:${competition}`);
+    const selectedId = activeCareers.some((career) => career.id === storedId) ? storedId! : activeCareers[0].id;
+    setHomeCareerIds((current) => current[competition] === selectedId ? current : { ...current, [competition]: selectedId });
+  }, [competition, careers]);
+
+  const selectHomeCareer = (careerId: string) => {
+    setHomeCareerIds((current) => ({ ...current, [competition]: careerId }));
+    if (typeof window !== "undefined") window.localStorage.setItem(`nexo:last-career:${competition}`, careerId);
+  };
+  const cycleHomeCareer = (direction: -1 | 1) => {
+    if (activeCareers.length < 2) return;
+    const nextIndex = (activeCareerIndex + direction + activeCareers.length) % activeCareers.length;
+    selectHomeCareer(activeCareers[nextIndex].id);
+  };
+  const openHomeCareer = () => {
+    if (!activeCareer) return onCreateCareer();
+    selectHomeCareer(activeCareer.id);
+    onOpenCareer(activeCareer.id);
+  };
   useEffect(() => {
     let current = true;
     setClubActivityLoading(true);
@@ -4562,7 +4597,7 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
           <div className="score-stats">
             <div>
               <small>Carrera</small>
-              <strong>{activeCareer ? `${activeCareer.reputation} rep` : "Sin iniciar"}</strong>
+              <strong>{activeCareer ? activeCareers.length > 1 ? `${activeCareers.length} activas` : `${activeCareer.reputation} rep` : "Sin iniciar"}</strong>
             </div>
             <div>
               <small>Mejor puesto</small>
@@ -4573,11 +4608,19 @@ function Dashboard({ userName, competition, setCompetition, teamId, team, partic
               <strong>0</strong>
             </div>
           </div>
-          <button className={`career-home-promo ${activeCareer ? "active" : ""}`} onClick={() => activeCareer ? onOpenCareer(activeCareer.id) : onCreateCareer()}>
-            <span>M</span>
-            <p><small>{activeCareer ? `JORNADA ${activeCareer.matchday} · EN CURSO` : "NUEVO · MODO INDIVIDUAL"}</small><strong>{activeCareer ? `Continúa con ${activeCareer.sportsClubName}` : "Empieza tu Carrera de mánager"}</strong><em>{activeCareer ? `${activeCareer.budget.toFixed(1).replace(".", ",")} M · ${activeCareer.reputation}/100 reputación` : "Club real, decisiones y una temporada para recordar."}</em></p>
-            <b>{activeCareer ? "Continuar →" : "Elegir club →"}</b>
-          </button>
+          <div className={`career-home-switcher ${activeCareer ? "active" : ""}`}>
+            <button className={`career-home-promo ${activeCareer ? "active" : ""}`} onClick={openHomeCareer}>
+              <span>{activeCareer?.sportsClubName.split(/\s+/).map((word) => word[0]).slice(0, 2).join("") || "M"}</span>
+              <p><small>{activeCareer ? `JORNADA ${activeCareer.matchday} · EN CURSO` : "NUEVO · MODO INDIVIDUAL"}</small><strong>{activeCareer ? `Continúa con ${activeCareer.sportsClubName}` : "Empieza tu Carrera de mánager"}</strong><em>{activeCareer ? `${activeCareer.budget.toFixed(1).replace(".", ",")} M · ${activeCareer.reputation}/100 reputación` : "Club real, decisiones y una temporada para recordar."}</em></p>
+              <b>{activeCareer ? "Continuar →" : "Elegir club →"}</b>
+            </button>
+            {activeCareers.length > 1 && <nav className="career-home-picker" aria-label="Cambiar Carrera activa">
+              <button aria-label="Carrera anterior" onClick={() => cycleHomeCareer(-1)}>←</button>
+              <span><b>{activeCareerIndex + 1}</b> de {activeCareers.length}<small>Carreras en {competition}</small></span>
+              <div>{activeCareers.map((career) => <button aria-label={`Mostrar Carrera con ${career.sportsClubName}`} className={career.id === activeCareer?.id ? "active" : ""} key={career.id} onClick={() => selectHomeCareer(career.id)} />)}</div>
+              <button aria-label="Carrera siguiente" onClick={() => cycleHomeCareer(1)}>→</button>
+            </nav>}
+          </div>
           <button className="dashboard-active-club" onClick={() => navigate("equipo")}>
             <span>ACTIVO</span>
             <p>
@@ -4782,7 +4825,9 @@ function TeamView({ teamId, setTeamId, teams, leagues, participations, fantasyEv
     : [];
   const marketTeams = clubParticipations.filter(({ league }) => league.mode === "market").length;
   const fantasyTeams = clubParticipations.filter(({ league }) => league.mode === "fantasy").length;
-  const clubCareers = careers.filter((career) => career.competition === competition && (!activeClub || career.clubId === activeClub.id) && career.status !== "abandoned");
+  // Una Carrera pertenece al club raíz de la cuenta; activeClub es una identidad
+  // de competición (fantasy_team) y sus ids no son comparables.
+  const clubCareers = careers.filter((career) => career.competition === competition && career.status !== "abandoned");
   const rankedPositions = clubParticipations
     .map(({ league }) => Number.parseInt(league.rank, 10))
     .filter((rank) => Number.isFinite(rank) && rank > 0);
