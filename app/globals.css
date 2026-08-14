@@ -609,6 +609,253 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(127, 183, 31
 
 @media (max-width: 700px) { .rival-report-button { padding: 0 7px; font-size: 0; }.rival-report-button::first-letter { font-size: 10px; }.admin-report-inbox footer { display: grid; grid-template-columns: repeat(3,1fr); }.admin-report-inbox footer button { padding: 0 4px; }.league-options-dialog { max-height: 94vh; } }
 
+/* Mobile league usability: management, lineups, rankings and rival squads. */
+@media (max-width: 600px) {
+  .manage-private-dialog {
+    padding: 16px;
+  }
+
+  .manage-private-dialog .dialog-header h2 {
+    font-size: 25px;
+    line-height: 1.05;
+  }
+
+  .manage-private-dialog .dialog-header p,
+  .manage-private-dialog .dialog-header p:last-child {
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  .manage-private-dialog .private-manage-tabs {
+    height: 50px;
+    margin-bottom: 16px;
+  }
+
+  .manage-private-dialog .private-manage-tabs button {
+    font-size: 12px;
+  }
+
+  .manage-private-dialog .private-rules-grid,
+  .manage-private-dialog .private-review-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .manage-private-dialog .private-field > span,
+  .manage-private-dialog .private-choice-label {
+    font-size: 10px;
+  }
+
+  .manage-private-dialog .private-field input,
+  .manage-private-dialog .private-field select,
+  .manage-private-dialog .private-field textarea {
+    font-size: 14px;
+  }
+
+  .manage-private-dialog .private-rule-control,
+  .manage-private-dialog .private-rule-toggle {
+    min-height: 76px;
+    padding: 12px;
+  }
+
+  .manage-private-dialog .private-rule-control strong,
+  .manage-private-dialog .private-rule-control b,
+  .manage-private-dialog .private-rule-toggle strong,
+  .manage-private-dialog .private-future-note strong {
+    font-size: 12px;
+    line-height: 1.3;
+  }
+
+  .manage-private-dialog .private-rule-control > small,
+  .manage-private-dialog .private-rule-toggle small,
+  .manage-private-dialog .private-future-note small,
+  .manage-private-dialog .private-immutable,
+  .manage-private-dialog .private-field > small {
+    font-size: 10px;
+    line-height: 1.45;
+  }
+
+  .manage-private-dialog .private-rule-toggle > span {
+    width: 36px;
+    height: 36px;
+    font-size: 12px;
+  }
+
+  .manage-private-dialog .private-code-manage {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 11px;
+  }
+
+  .manage-private-dialog .private-code-manage small,
+  .manage-private-dialog .private-code-manage button {
+    font-size: 10px;
+  }
+
+  .manage-private-dialog .private-code-manage button {
+    min-height: 42px;
+  }
+
+  .manage-private-dialog .dialog-actions button {
+    min-height: 46px;
+    font-size: 12px;
+  }
+
+  .league-content .football-pitch .pitch-player {
+    width: 72px;
+  }
+
+  .league-content .football-pitch .pitch-player > span {
+    width: 50px;
+    height: 50px;
+    font-size: 10px;
+  }
+
+  .league-content .football-pitch .pitch-player > span img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .league-content .ranking-round {
+    font-size: 11px;
+  }
+
+  .league-content .ranking-head,
+  .league-content .ranking-row {
+    padding-inline: 9px;
+    grid-template-columns: 28px 42px minmax(0, 1fr) 64px;
+    gap: 6px;
+  }
+
+  .league-content .ranking-head {
+    min-height: 44px;
+    font-size: 10px;
+  }
+
+  .league-content .ranking-row {
+    min-height: 82px;
+  }
+
+  .league-content .ranking-row > strong {
+    font-size: 14px;
+  }
+
+  .league-content .ranking-avatar {
+    width: 40px;
+    height: 40px;
+    font-size: 11px;
+  }
+
+  .league-content .ranking-table p strong {
+    gap: 5px;
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  .league-content .ranking-table p small {
+    margin-top: 4px;
+    font-size: 10px;
+    line-height: 1.25;
+  }
+
+  .league-content .ranking-row > b {
+    font-size: 12px;
+  }
+
+  .league-content .ranking-admin-badge {
+    padding: 3px 5px;
+    font-size: 8px;
+  }
+
+  .rival-team-sheet .rival-pitch-card {
+    padding: 12px 8px;
+  }
+
+  .rival-team-sheet .rival-pitch-heading h3 {
+    font-size: 20px;
+  }
+
+  .rival-team-sheet .rival-pitch-heading > span {
+    font-size: 10px;
+  }
+
+  .rival-team-sheet .rival-pitch {
+    min-height: 535px;
+    padding-inline: 4px;
+    border-color: rgba(255, 255, 255, .22);
+    background:
+      radial-gradient(circle at center, rgba(201, 246, 83, .1), transparent 31%),
+      repeating-linear-gradient(90deg, rgba(255, 255, 255, .025) 0, rgba(255, 255, 255, .025) 12.5%, transparent 12.5%, transparent 25%),
+      #0d1b12 !important;
+    color: #fff;
+  }
+
+  .rival-team-sheet .rival-pitch-player {
+    width: 72px;
+    color: #fff;
+  }
+
+  .rival-team-sheet .rival-pitch-player > span {
+    width: 47px;
+    height: 47px;
+    overflow: hidden;
+    font-size: 10px;
+  }
+
+  .rival-team-sheet .rival-pitch-player > span img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+  }
+
+  .rival-team-sheet .rival-pitch-player strong {
+    width: 74px;
+    margin-top: 5px;
+    color: #fff !important;
+    font-size: 11px !important;
+    line-height: 1.15;
+  }
+
+  .rival-team-sheet .rival-pitch-player small {
+    margin-top: 3px;
+    color: var(--lime) !important;
+    font-size: 9px !important;
+    font-weight: 850;
+  }
+
+  .rival-team-sheet .rival-bench h3 {
+    font-size: 19px;
+  }
+
+  .rival-team-sheet .rival-bench-player {
+    min-height: 76px;
+  }
+
+  .rival-team-sheet .rival-bench-player strong {
+    font-size: 12px;
+  }
+
+  .rival-team-sheet .rival-bench-player small,
+  .rival-team-sheet .rival-bench-player > b {
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 390px) {
+  .league-content .football-pitch .pitch-player,
+  .rival-team-sheet .rival-pitch-player {
+    width: 68px;
+  }
+
+  .league-content .football-pitch .pitch-player > span,
+  .rival-team-sheet .rival-pitch-player > span {
+    width: 46px;
+    height: 46px;
+  }
+}
+
 .fantasy-budget-hero > button { display: none; }.fantasy-quick-tools { margin-top: 18px; padding: 16px; display: grid; grid-template-columns: minmax(180px,.65fr) 1.35fr; align-items: center; gap: 14px; border: 1px solid var(--line); border-radius: 17px; background: #fff; }.fantasy-quick-tools h3 { margin: 2px 0 3px; font-size: 20px; }.fantasy-quick-tools > div > small { color: var(--muted); font-size: 7px; }.fantasy-tool-buttons { display: grid; grid-template-columns: repeat(3,1fr); gap: 7px; }.fantasy-tool-buttons > button { min-height: 62px; padding: 9px; display: flex; align-items: center; gap: 8px; border: 1px solid #dce1d9; border-radius: 12px; background: #f5f8f2; cursor: pointer; text-align: left; }.fantasy-tool-buttons > button.clear { background: #fff8f7; }.fantasy-tool-buttons > button > span { width: 29px; height: 29px; display: grid; place-items: center; flex: none; border-radius: 9px; background: var(--lime); font-size: 13px; font-weight: 900; }.fantasy-tool-buttons > button.clear > span { background: #ffe0dc; color: #a43a30; }.fantasy-tool-buttons p { margin: 0; display: flex; flex-direction: column; }.fantasy-tool-buttons strong { font-size: 8px; }.fantasy-tool-buttons small { margin-top: 3px; color: var(--muted); font-size: 6px; line-height: 1.3; }.fantasy-tool-backdrop { z-index: 185; }.fantasy-random-dialog, .fantasy-clear-dialog { width: min(100%, 520px); }.fantasy-random-dialog > p, .fantasy-clear-dialog > p { color: var(--muted); font-size: 9px; line-height: 1.5; }.fantasy-random-options { display: grid; gap: 8px; margin: 15px 0; }.fantasy-random-options button { min-height: 68px; padding: 11px; display: grid; grid-template-columns: 29px 1fr; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 12px; background: #fff; cursor: pointer; text-align: left; }.fantasy-random-options button.active { border-color: #91b83f; background: #f1f8e6; }.fantasy-random-options button > span { width: 27px; height: 27px; display: grid; place-items: center; border: 1px solid #ccd3c8; border-radius: 50%; }.fantasy-random-options button.active > span { border: 0; background: var(--lime); }.fantasy-random-options div { display: flex; flex-direction: column; }.fantasy-random-options strong { font-size: 9px; }.fantasy-random-options small { margin-top: 4px; color: var(--muted); font-size: 7px; }.fantasy-clear-dialog .leave-league-button { width: auto; margin: 0; padding: 0 18px; }
 .fantasy-rules-admin { grid-column: 1 / -1; }.fantasy-admin-option-list { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; margin: 13px 0; }.fantasy-admin-option-list button { min-height: 74px; padding: 11px; display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 12px; background: #f7f8f6; cursor: pointer; text-align: left; }.fantasy-admin-option-list button.active { background: #f0f7e8; }.fantasy-admin-option-list button > span { width: 28px; height: 28px; display: grid; place-items: center; border: 1px solid #d3d9d0; border-radius: 50%; }.fantasy-admin-option-list button.active > span { border: 0; background: var(--lime); }.fantasy-admin-option-list p { margin: 0; display: flex; flex-direction: column; }.fantasy-admin-option-list strong { font-size: 9px; }.fantasy-admin-option-list small { margin-top: 3px; color: var(--muted); font-size: 7px; line-height: 1.35; }.fantasy-admin-option-list b { color: var(--muted); font-size: 6px; }.fantasy-admin-option-list button.active b { color: #6b9329; }.admin-fantasy-validation { margin-bottom: 12px; padding: 11px; display: flex; align-items: center; gap: 9px; border-radius: 12px; background: #101a12; color: #fff; }.admin-fantasy-validation > span { width: 28px; height: 28px; display: grid; place-items: center; flex: none; border-radius: 50%; background: var(--lime); color: var(--ink); }.admin-fantasy-validation p { margin: 0; display: flex; flex-direction: column; }.admin-fantasy-validation strong { font-size: 8px; }.admin-fantasy-validation small { margin-top: 3px; color: #91a092; font-size: 7px; }
 
@@ -1120,6 +1367,18 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(127, 183, 31
   .career-calendar-strip small { font-size: 8px !important; }
   .career-calendar-strip strong { font-size: 10px !important; }
   .career-calendar-strip em { font-size: 8px !important; }
+  .league-manage-button {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    padding: 0;
+    justify-content: center;
+    overflow: hidden;
+    font-size: 0 !important;
+  }
+  .league-manage-button span {
+    font-size: 16px !important;
+  }
 }
 
 /* Las vistas operativas de una liga necesitan una escala propia en móvil. */
@@ -1327,5 +1586,700 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(127, 183, 31
   .league-content .matchday-settlement-receipt > footer {
     font-size: 11px !important;
     line-height: 1.35;
+  }
+}
+
+/* Jornada móvil: selector horizontal y partidos legibles sin comprimir los equipos. */
+@media (max-width: 600px) {
+  .league-content .matchday-selector {
+    display: flex;
+    gap: 9px;
+    margin-bottom: 14px;
+    padding: 2px 2px 8px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: thin;
+  }
+
+  .league-content .matchday-selector button {
+    min-width: 126px;
+    min-height: 96px;
+    padding: 12px;
+    flex: 0 0 126px;
+    scroll-snap-align: start;
+    border-radius: 15px;
+  }
+
+  .league-content .matchday-selector small {
+    font-size: 11px !important;
+  }
+
+  .league-content .matchday-selector strong {
+    font-size: 23px;
+  }
+
+  .league-content .matchday-selector span {
+    font-size: 11px !important;
+  }
+
+  .league-content .matchday-selector i {
+    margin-top: 10px;
+    font-size: 9px !important;
+  }
+
+  .league-content .matchday-view-tabs {
+    height: auto;
+    min-height: 72px;
+    padding: 5px;
+    gap: 5px;
+  }
+
+  .league-content .matchday-view-tabs button {
+    min-height: 60px;
+    padding: 9px;
+  }
+
+  .league-content .matchday-view-tabs button > span {
+    width: 31px;
+    height: 31px;
+    font-size: 13px;
+  }
+
+  .league-content .matchday-view-tabs strong {
+    font-size: 13px !important;
+  }
+
+  .league-content .matchday-view-tabs small {
+    font-size: 10px !important;
+  }
+
+  .league-content .matchday-calendar > header {
+    min-height: 0;
+    padding: 18px 16px;
+    gap: 13px;
+  }
+
+  .league-content .matchday-calendar > header h3 {
+    margin-block: 5px;
+    font-size: 23px;
+  }
+
+  .league-content .matchday-calendar > header p:last-child {
+    font-size: 12px !important;
+  }
+
+  .league-content .matchday-calendar > header > span {
+    padding: 8px 10px;
+    font-size: 10px !important;
+  }
+
+  .league-content .schedule-exception-notice {
+    padding: 14px 12px;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .league-content .schedule-exception-notice > span {
+    width: 33px;
+    height: 33px;
+  }
+
+  .league-content .schedule-exception-notice strong {
+    font-size: 12px !important;
+  }
+
+  .league-content .schedule-exception-notice p,
+  .league-content .schedule-exception-notice > b {
+    font-size: 10px !important;
+  }
+
+  .league-content .schedule-exception-notice > b {
+    grid-column: 2;
+  }
+
+  .league-content .fixture-calendar-list {
+    gap: 10px;
+  }
+
+  .league-content .fixture-calendar-list > article {
+    border-radius: 16px;
+  }
+
+  .league-content .fixture-calendar-list > article > button {
+    position: relative;
+    min-height: 132px;
+    padding: 13px 12px 12px;
+    grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr);
+    grid-template-rows: auto minmax(48px, auto) auto;
+    gap: 9px 7px;
+  }
+
+  .league-content .fixture-calendar-list time {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    font-size: 11px !important;
+    line-height: 1.3;
+  }
+
+  .league-content .calendar-team {
+    grid-column: 1;
+    grid-row: 2;
+    gap: 7px;
+  }
+
+  .league-content .calendar-team.away {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .league-content .calendar-team > span {
+    display: grid;
+    width: 35px;
+    height: 38px;
+    font-size: 9px;
+  }
+
+  .league-content .calendar-team strong {
+    overflow: visible;
+    font-size: 12px !important;
+    line-height: 1.2;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .league-content .calendar-score {
+    min-width: 76px;
+    min-height: 47px;
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .league-content .calendar-score b {
+    font-size: 17px;
+  }
+
+  .league-content .calendar-score em {
+    font-size: 8px !important;
+  }
+
+  .league-content .calendar-my-players {
+    min-height: 27px;
+    padding-top: 7px;
+    display: flex;
+    align-items: center;
+    flex-direction: row;
+    gap: 5px;
+    grid-column: 1 / -1;
+    grid-row: 3;
+    border-top: 1px solid #e6ebe3;
+  }
+
+  .league-content .calendar-my-players strong {
+    font-size: 14px;
+  }
+
+  .league-content .calendar-my-players span {
+    font-size: 10px !important;
+  }
+
+  .league-content .fixture-calendar-list > article > button > i {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    font-size: 12px;
+  }
+}
+
+/* Resumen del equipo rival con una escala realmente móvil. */
+@media (max-width: 600px) {
+  .rival-team-sheet.summary {
+    padding: 14px 13px max(20px, env(safe-area-inset-bottom));
+  }
+
+  .rival-team-sheet.summary .rival-sheet-header {
+    min-height: 76px;
+    gap: 9px;
+  }
+
+  .rival-team-sheet.summary .rival-sheet-back {
+    width: 36px;
+    height: 36px;
+    font-size: 19px !important;
+  }
+
+  .rival-team-sheet.summary .rival-crest {
+    width: 43px;
+    height: 48px;
+    font-size: 11px;
+  }
+
+  .rival-team-sheet.summary .rival-sheet-header h2 {
+    max-width: 150px;
+    font-size: 21px;
+    line-height: 1.05;
+  }
+
+  .rival-team-sheet.summary .rival-sheet-header small {
+    font-size: 11px !important;
+  }
+
+  .rival-team-sheet.summary .rival-sheet-header > strong {
+    font-size: 23px;
+  }
+
+  .rival-team-sheet.summary .rival-report-button {
+    min-height: 36px;
+    font-size: 0 !important;
+  }
+
+  .rival-team-sheet.summary .rival-report-button::first-letter {
+    font-size: 13px;
+  }
+
+  .rival-team-sheet.summary .rival-summary-kpis {
+    gap: 8px;
+  }
+
+  .rival-team-sheet.summary .rival-summary-kpis > div {
+    min-height: 78px;
+    padding: 11px;
+  }
+
+  .rival-team-sheet.summary .rival-summary-kpis small {
+    font-size: 9px !important;
+  }
+
+  .rival-team-sheet.summary .rival-summary-kpis strong {
+    margin-top: 7px;
+    font-size: 19px;
+  }
+
+  .rival-team-sheet.summary .rival-lineup-locked {
+    margin-top: 10px;
+    padding: 13px;
+    gap: 11px;
+  }
+
+  .rival-team-sheet.summary .rival-lineup-locked > span {
+    width: 36px;
+    height: 36px;
+  }
+
+  .rival-team-sheet.summary .rival-lineup-locked strong {
+    font-size: 13px;
+  }
+
+  .rival-team-sheet.summary .rival-lineup-locked p {
+    margin-top: 5px;
+    font-size: 11px !important;
+    line-height: 1.4 !important;
+  }
+
+  .rival-team-sheet.summary .rival-preview-row {
+    min-height: 90px;
+    margin-block: 10px;
+    padding: 13px;
+  }
+
+  .rival-team-sheet.summary .rival-preview-row strong {
+    font-size: 19px;
+  }
+
+  .rival-team-sheet.summary .rival-preview-row small {
+    max-width: 160px;
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+  }
+
+  .rival-team-sheet.summary .rival-preview-avatars .avatar,
+  .rival-team-sheet.summary .rival-preview-avatars > span {
+    width: 38px;
+    height: 38px;
+    font-size: 9px;
+  }
+
+  .rival-team-sheet.summary .rival-open-team {
+    min-height: 50px;
+    font-size: 13px !important;
+  }
+}
+
+/* Historial de mercado móvil: cada operación funciona como una tarjeta. */
+@media (max-width: 600px) {
+  .league-content .market-history-view {
+    gap: 12px;
+  }
+
+  .league-content .market-history-kpis {
+    gap: 9px;
+  }
+
+  .league-content .market-history-kpis article {
+    min-height: 92px;
+    padding: 14px;
+  }
+
+  .league-content .market-history-kpis small,
+  .league-content .market-history-kpis span {
+    font-size: 10px !important;
+  }
+
+  .league-content .market-history-kpis strong {
+    margin-block: 6px 4px;
+    font-size: 22px;
+  }
+
+  .league-content .market-history-toolbar {
+    padding: 10px;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    border-radius: 15px;
+  }
+
+  .league-content .market-history-toolbar .search-box {
+    grid-column: auto;
+    min-height: 46px;
+  }
+
+  .league-content .market-history-toolbar .search-box input,
+  .league-content .market-history-toolbar select {
+    min-height: 46px;
+    font-size: 12px !important;
+  }
+
+  .league-content .market-history-list {
+    display: grid;
+    gap: 9px;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .league-content .market-history-list > article {
+    min-height: 132px;
+    padding: 14px 12px;
+    grid-template-columns: 42px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto;
+    gap: 8px 10px;
+    align-items: start;
+    border: 1px solid var(--line);
+    border-radius: 15px;
+    background: #fff;
+  }
+
+  .league-content .history-type {
+    width: 41px;
+    height: 44px;
+    grid-column: 1;
+    grid-row: 1 / 3;
+    font-size: 13px;
+  }
+
+  .league-content .market-history-list article > div {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .league-content .market-history-list article > div strong {
+    font-size: 13px !important;
+    line-height: 1.25;
+  }
+
+  .league-content .market-history-list article > div small {
+    margin-top: 4px;
+    overflow: visible;
+    font-size: 10px !important;
+    line-height: 1.35;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .league-content .market-history-list article > em {
+    grid-column: 3;
+    grid-row: 1;
+    padding: 6px 8px;
+    font-size: 9px !important;
+  }
+
+  .league-content .market-history-list article > b {
+    grid-column: 2;
+    grid-row: 2;
+    font-size: 11px !important;
+  }
+
+  .league-content .market-history-list article > span:not(.history-type),
+  .league-content .market-history-list article > strong {
+    grid-column: 2 / 4;
+    font-size: 11px !important;
+    line-height: 1.35;
+  }
+
+  .league-content .market-history-list article > time {
+    grid-column: 3;
+    grid-row: 3;
+    align-self: end;
+    font-size: 10px !important;
+    text-align: right;
+  }
+
+  .league-content .market-history-view > footer {
+    gap: 5px;
+    font-size: 10px !important;
+    line-height: 1.4;
+  }
+}
+
+/* Puja móvil: controles y saldo con tamaño táctil y lectura cómoda. */
+@media (max-width: 600px) {
+  .bid-dialog-backdrop {
+    padding: 0 8px;
+    align-items: flex-end;
+  }
+
+  .bid-dialog {
+    width: 100%;
+    max-height: 94vh;
+    padding: 17px 15px max(20px, env(safe-area-inset-bottom));
+    border-radius: 24px 24px 0 0;
+  }
+
+  .bid-dialog .dialog-header h2 {
+    margin-top: 5px;
+    font-size: 25px;
+    line-height: 1.05;
+  }
+
+  .bid-dialog .dialog-close {
+    width: 38px;
+    height: 38px;
+    font-size: 16px !important;
+  }
+
+  .bid-dialog .bid-player-summary {
+    min-height: 86px;
+    padding: 13px;
+    grid-template-columns: 48px minmax(0, 1fr) auto;
+    gap: 11px;
+  }
+
+  .bid-dialog .bid-player-summary > .avatar {
+    width: 46px;
+    height: 46px;
+  }
+
+  .bid-dialog .bid-player-summary strong {
+    font-size: 13px;
+  }
+
+  .bid-dialog .bid-player-summary small {
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+  }
+
+  .bid-dialog .bid-player-summary > span b {
+    margin-top: 5px;
+    font-size: 16px;
+  }
+
+  .bid-dialog .bid-amount-field {
+    margin-top: 17px;
+  }
+
+  .bid-dialog .bid-amount-field > span {
+    margin-bottom: 8px;
+    font-size: 12px;
+  }
+
+  .bid-dialog .bid-amount-field > div {
+    height: 62px;
+  }
+
+  .bid-dialog .bid-amount-field input {
+    font-size: 22px !important;
+  }
+
+  .bid-dialog .bid-amount-field b {
+    font-size: 16px;
+  }
+
+  .bid-dialog .bid-amount-field > small {
+    margin-top: 7px;
+    font-size: 10px !important;
+  }
+
+  .bid-dialog .bid-budget-breakdown {
+    margin-top: 14px;
+    padding: 11px 13px;
+  }
+
+  .bid-dialog .bid-budget-breakdown p {
+    min-height: 38px;
+    font-size: 11px !important;
+  }
+
+  .bid-dialog .bid-privacy-note {
+    padding: 12px;
+    font-size: 10px !important;
+    line-height: 1.45 !important;
+  }
+
+  .bid-dialog .dialog-actions {
+    gap: 8px;
+  }
+
+  .bid-dialog .dialog-actions button {
+    min-height: 50px;
+    font-size: 13px !important;
+  }
+}
+
+/* Trayectoria rival móvil: métricas compactas y estado vacío informativo. */
+.rival-chart-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
+}
+
+.rival-chart-empty > span {
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--lime);
+  color: var(--ink);
+}
+
+.rival-chart-empty > small {
+  max-width: 270px;
+  color: var(--muted);
+}
+
+@media (max-width: 600px) {
+  .rival-team-sheet.expanded .rival-sheet-header {
+    min-height: 76px;
+    gap: 9px;
+  }
+
+  .rival-team-sheet.expanded .rival-sheet-header h2 {
+    max-width: 150px;
+    font-size: 21px;
+    line-height: 1.05;
+  }
+
+  .rival-team-sheet.expanded .rival-sheet-header small {
+    font-size: 11px !important;
+  }
+
+  .rival-team-sheet.expanded .rival-sheet-header > strong {
+    font-size: 23px;
+  }
+
+  .rival-team-sheet.expanded .rival-report-button {
+    min-height: 36px;
+    font-size: 0 !important;
+  }
+
+  .rival-team-sheet.expanded .rival-report-button::first-letter {
+    font-size: 13px;
+  }
+
+  .rival-team-sheet .rival-tabs {
+    height: 55px;
+    margin-block: 8px 12px;
+  }
+
+  .rival-team-sheet .rival-tabs button {
+    font-size: 12px !important;
+  }
+
+  .rival-team-sheet .rival-trajectory {
+    gap: 11px;
+  }
+
+  .rival-team-sheet .rival-form-chart,
+  .rival-team-sheet .rival-movements,
+  .rival-team-sheet .rival-history-kpis article {
+    padding: 15px;
+  }
+
+  .rival-team-sheet .rival-form-chart {
+    min-height: 250px;
+  }
+
+  .rival-team-sheet .rival-form-chart h3,
+  .rival-team-sheet .rival-movements h3 {
+    margin-top: 5px;
+    font-size: 21px;
+  }
+
+  .rival-team-sheet .rival-bars {
+    height: 165px;
+    margin-top: 18px;
+    gap: 8px;
+  }
+
+  .rival-team-sheet .rival-bars strong {
+    font-size: 12px;
+  }
+
+  .rival-team-sheet .rival-bars small {
+    font-size: 10px !important;
+  }
+
+  .rival-team-sheet .rival-chart-empty strong {
+    font-size: 14px;
+  }
+
+  .rival-team-sheet .rival-chart-empty small {
+    font-size: 11px !important;
+    line-height: 1.4 !important;
+  }
+
+  .rival-team-sheet .rival-history-kpis {
+    gap: 9px;
+  }
+
+  .rival-team-sheet .rival-history-kpis article {
+    min-height: 108px;
+  }
+
+  .rival-team-sheet .rival-history-kpis small,
+  .rival-team-sheet .rival-history-kpis span {
+    font-size: 10px !important;
+    line-height: 1.3 !important;
+  }
+
+  .rival-team-sheet .rival-history-kpis strong {
+    margin-block: 8px 4px;
+    font-size: 25px;
+  }
+
+  .rival-team-sheet .rival-movements p {
+    min-height: 62px;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .rival-team-sheet .rival-movements p > span {
+    width: 31px;
+    height: 31px;
+    font-size: 10px;
+  }
+
+  .rival-team-sheet .rival-movements p strong {
+    font-size: 12px;
+    line-height: 1.3;
+  }
+
+  .rival-team-sheet .rival-movements p small {
+    display: block;
+    font-size: 10px !important;
   }
 }

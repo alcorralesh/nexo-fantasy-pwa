@@ -1786,7 +1786,19 @@ export function FantasyApp({ initialData }: { initialData: FantasyBootstrapData 
   const selectedFantasyEvent = fantasyEvents.find((event) => event.id === selectedLeagueId);
   const selectedLeague = leagues.find((item) => item.id === selectedLeagueId);
   const selectedCompetitionBackendId = selectedLeague?.competition === "Primera" ? "primera" : selectedLeague?.competition === "Segunda" ? "segunda" : "liga_f";
-  const selectedCompetitionOpenMatchdays = backendMatchdays.filter((item) => item.competitionId === selectedCompetitionBackendId && item.state === "open");
+  const rawCompetitionOpenMatchdays = backendMatchdays
+    .filter((item) => item.competitionId === selectedCompetitionBackendId && item.state === "open")
+    .sort((a, b) => a.matchday - b.matchday);
+  const naturalEditableMatchday = rawCompetitionOpenMatchdays[0]?.matchday;
+  const selectedCompetitionOpenMatchdays = rawCompetitionOpenMatchdays.filter((item) => {
+    if (item.matchday === naturalEditableMatchday) return true;
+    return matchFixtures.some((fixture) =>
+      fixture.competition === selectedLeague?.competition
+      && fixture.matchday === item.matchday
+      && fixture.status !== "cancelled"
+      && getFixtureScheduleException(matchFixtures, fixture) === "advanced"
+    );
+  });
   const preferredEditableMatchday = selectedMatchdayByCompetition[selectedCompetitionBackendId];
   const selectedEditableMatchday = selectedCompetitionOpenMatchdays.some((item) => item.matchday === preferredEditableMatchday)
     ? preferredEditableMatchday
@@ -6913,6 +6925,7 @@ function LeagueSquadView({ squad, starters, league, marketPlayers, fixtures, par
           competition={league.competition}
           fixtures={fixtures}
           captain={captainId === detailPlayer.id}
+          matchday={activeMatchday}
           scoringRules={scoringRules}
           bench={currentBench}
           marketPlayers={marketPlayers}
@@ -8276,14 +8289,27 @@ function getFixtureScheduleException(fixtures: MatchFixture[], fixture: MatchFix
 }
 
 function getPlayerNextFixture(fixtures: MatchFixture[], competition: CompetitionName, club: string, fromMatchday: number) {
-  const match = fixtures
-    .filter((fixture) => fixture.competition === competition && fixture.matchday >= fromMatchday && fixture.status !== "final" && fixture.status !== "cancelled")
+  const competitionFixtures = fixtures.filter((fixture) => fixture.competition === competition);
+  const roundLockAt = competitionFixtures
+    .filter((fixture) => fixture.matchday === fromMatchday && fixture.kickoffAt && fixture.status !== "cancelled")
+    .map((fixture) => new Date(fixture.kickoffAt as string).getTime())
+    .filter((kickoff) => !Number.isNaN(kickoff))
+    .reduce((earliest, kickoff) => Math.min(earliest, kickoff), Number.POSITIVE_INFINITY);
+  const candidates = competitionFixtures
+    .filter((fixture) => fixture.matchday >= fromMatchday && fixture.status !== "final" && fixture.status !== "cancelled")
     .filter((fixture) => fixtureClubMatches(club, fixture.home) || fixtureClubMatches(club, fixture.homeShortName) || fixtureClubMatches(club, fixture.away) || fixtureClubMatches(club, fixture.awayShortName))
     .sort((a, b) => {
       const aKickoff = new Date(a.kickoffAt ?? "9999-12-31").getTime();
       const bKickoff = new Date(b.kickoffAt ?? "9999-12-31").getTime();
       return aKickoff - bKickoff || a.matchday - b.matchday;
-    })[0];
+    });
+  // Mientras la jornada indicada siga abierta, su ficha conserva el partido
+  // de esa jornada aunque haya sido aplazado y se dispute después de la siguiente.
+  // Al comenzar el primer encuentro de la competición, la jornada se bloquea y
+  // la vista editable pasa a la siguiente, donde vuelve a mandar el orden real.
+  const match = roundLockAt > Date.now()
+    ? candidates.find((fixture) => fixture.matchday === fromMatchday) ?? candidates[0]
+    : candidates[0];
   if (!match) return undefined;
   const home = fixtureClubMatches(club, match.home) || fixtureClubMatches(club, match.homeShortName);
   const kickoff = match.kickoffAt ? new Date(match.kickoffAt) : null;
@@ -10499,6 +10525,8 @@ function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchase
     : (Object.keys(startingQuotas) as PlayerPosition[]).flatMap((position) => roster.filter((player) => player.position === position).slice(0, startingQuotas[position]));
   const bench = roster.filter((player) => !starters.some((starter) => starter.id === player.id));
   const captain = starters.find((player) => player.position === "DEL") ?? starters[0];
+  const rivalForm = rival.form ?? [];
+  const rivalAverage = rivalForm.length ? (rivalForm.reduce((sum, value) => sum + value, 0) / rivalForm.length).toFixed(1) : "—";
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -10658,13 +10686,19 @@ function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchase
                     <h3>Evolución reciente</h3>
                   </div>
                   <div className="rival-bars">
-                    {rival.form.map((points, index) => (
+                    {rivalForm.length ? rivalForm.map((points, index) => (
                       <div key={index}>
                         <i style={{ height: `${Math.max(6, points)}%` }} />
                         <strong>{points}</strong>
                         <small>J{index + 1}</small>
                       </div>
-                    ))}
+                    )) : (
+                      <div className="rival-chart-empty">
+                        <span>◷</span>
+                        <strong>Sin jornadas puntuadas</strong>
+                        <small>La evolución aparecerá cuando se cierre la primera jornada.</small>
+                      </div>
+                    )}
                   </div>
                 </section>
                 <section className="rival-history-kpis">
@@ -10675,8 +10709,8 @@ function RivalTeamSheet({ rival, competition, budget, sentOffers, clausePurchase
                   </article>
                   <article>
                     <small>MEDIA</small>
-                    <strong>{(rival.form.reduce((sum, value) => sum + value, 0) / rival.form.length).toFixed(1)}</strong>
-                    <span>puntos/jornada</span>
+                    <strong>{rivalAverage}</strong>
+                    <span>{rivalForm.length ? "puntos/jornada" : "Sin datos todavía"}</span>
                   </article>
                 </section>
                 <section className="rival-movements">

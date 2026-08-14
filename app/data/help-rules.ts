@@ -690,6 +690,7 @@ export const helpRules: HelpRule[] = [
     rules: [
       "Cada partido conserva siempre el identificador de su jornada oficial aunque se dispute antes, después o el mismo día que partidos de otra jornada.",
       "La sincronización compara las fechas reales entre jornadas: si un encuentro queda después de iniciarse la siguiente se marca como aplazado; si se disputa antes de comenzar la jornada anterior se identifica como adelantado.",
+      "Mientras una jornada siga abierta, la ficha del jugador mantiene como referencia su partido de esa jornada aunque esté aplazado. Al comenzar el primer encuentro se bloquea el once y la preparación avanza a la siguiente jornada.",
       "Un partido aplazado permanece dentro de su jornada original y sus jugadores puntúan usando el once inmutable guardado para esa jornada.",
       "Administración define un margen de espera desde el final previsto de la jornada, de 48 horas por defecto.",
       "Con la política recomendada de cierre provisional, al vencer el margen se publican puntos y clasificación con los partidos terminados, identificando claramente que faltan encuentros.",
@@ -700,7 +701,7 @@ export const helpRules: HelpRule[] = [
       "Con la política alternativa Esperar, la jornada puede mostrar puntos provisionales, pero no liquida dinero, cierra el ranking ni activa eventos siguientes hasta finalizar todos los partidos.",
       "Si un partido se adelanta, se actualizan las alertas y la jornada completa se bloquea al comenzar ese encuentro por ser el primer partido asignado a ella.",
       "Jornada muestra simultáneamente las competiciones solapadas: una puede permanecer En juego o Cierre provisional mientras la siguiente aparece como Preparación urgente con su nueva hora límite.",
-      "Equipo muestra un selector cuando hay dos o más jornadas abiertas. Cambiar de jornada recupera su borrador propio; guardar una nunca sobrescribe la alineación de otra.",
+      "Equipo muestra el selector de alineaciones independientes solo cuando, además de la jornada natural en preparación, un partido adelantado obliga a abrir otra jornada. Una jornada futura programada con normalidad no aparece como abierta. Cambiar de jornada recupera su borrador propio; guardar una nunca sobrescribe la alineación de otra.",
       "Al tocar Preparar equipo se abre directamente el editor de la jornada adelantada; nunca se edita el once de la jornada que ya está bloqueada.",
       "En ligas públicas o privadas de mercado se utiliza, por orden, el último borrador válido de la jornada, el último once confirmado o, si es la primera jornada, un once inicial válido de la plantilla.",
       "En una liga fantástica no se copia ningún equipo automáticamente: el usuario debe guardar un once válido o utilizar expresamente la opción Copiar jornada anterior.",
