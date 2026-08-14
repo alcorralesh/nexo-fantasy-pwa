@@ -76,6 +76,34 @@ async function loadRound(competition: typeof competitions[number], matchday: num
   return matches.map((match) => fixture(match, competition.id, matchday));
 }
 
+function markPostponedFixtures(fixtures: Fixture[]) {
+  const kickoffsByRound = new Map<string, number[]>();
+  for (const item of fixtures) {
+    if (!item.kickoff_at || item.status === "cancelled") continue;
+    const kickoff = new Date(item.kickoff_at).getTime();
+    if (Number.isNaN(kickoff)) continue;
+    const key = `${item.competition_id}:${item.matchday}`;
+    kickoffsByRound.set(key, [...(kickoffsByRound.get(key) ?? []), kickoff]);
+  }
+  const roundReference = new Map(Array.from(kickoffsByRound.entries()).map(([key, values]) => {
+    const sorted = values.sort((a, b) => a - b);
+    return [key, sorted[Math.floor(sorted.length / 2)]];
+  }));
+
+  return fixtures.map((item) => {
+    if (item.status !== "scheduled" || !item.kickoff_at) return item;
+    const kickoff = new Date(item.kickoff_at).getTime();
+    const nextRoundStart = roundReference.get(`${item.competition_id}:${item.matchday + 1}`);
+    // La fuente oficial conserva el partido en su jornada original, pero una
+    // reprogramación puede situarlo después de que ya haya empezado la siguiente.
+    // En ese caso el ciclo de jornada debe tratarlo como aplazado aunque la web
+    // de LALIGA lo publique de nuevo como "programado" con su nueva fecha.
+    return nextRoundStart !== undefined && kickoff > nextRoundStart
+      ? { ...item, status: "postponed" }
+      : item;
+  });
+}
+
 function summarize(fixtures: Fixture[], existing: Array<Record<string, unknown>>) {
   const current = new Map(existing.map((row) => [String(row.provider_id), row]));
   let changed = 0;
@@ -108,7 +136,7 @@ Deno.serve(async (request) => {
     // LALIGA puede responder con 429/502 cuando recibe demasiadas peticiones simultáneas.
     // Se limita la concurrencia para que la sincronización completa sea estable también en el plan gratuito.
     const rounds = await mapLimit(tasks, 6, ({ competition, matchday }) => loadRound(competition, matchday));
-    const fixtures = rounds.flat();
+    const fixtures = markPostponedFixtures(rounds.flat());
     const { data: existing, error: existingError } = await admin.from("match_fixtures").select("provider_id,kickoff_at,status,home_score,away_score").eq("season", season);
     if (existingError) throw existingError;
     const summary = summarize(fixtures, existing ?? []);

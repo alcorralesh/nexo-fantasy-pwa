@@ -8256,18 +8256,41 @@ function fixtureClubMatches(playerClub: string, fixtureClub: string) {
   return playerKey === fixtureKey || (playerKey.length >= 5 && fixtureKey.length >= 5 && (playerKey.includes(fixtureKey) || fixtureKey.includes(playerKey)));
 }
 
+function getFixtureScheduleException(fixtures: MatchFixture[], fixture: MatchFixture): "postponed" | "advanced" | undefined {
+  if (fixture.status === "postponed") return "postponed";
+  if (!fixture.kickoffAt) return undefined;
+  const kickoff = new Date(fixture.kickoffAt).getTime();
+  if (Number.isNaN(kickoff)) return undefined;
+  const roundReference = (matchday: number) => fixtures
+    .filter((candidate) => candidate.competition === fixture.competition && candidate.matchday === matchday && candidate.kickoffAt && candidate.status !== "cancelled")
+    .map((candidate) => new Date(candidate.kickoffAt as string).getTime())
+    .filter((value) => !Number.isNaN(value))
+    .sort((a, b) => a - b);
+  const previousRound = roundReference(fixture.matchday - 1);
+  const previousRoundStart = previousRound[Math.floor(previousRound.length / 2)];
+  if (Number.isFinite(previousRoundStart) && kickoff < previousRoundStart) return "advanced";
+  const nextRound = roundReference(fixture.matchday + 1);
+  const nextRoundStart = nextRound[Math.floor(nextRound.length / 2)];
+  if (Number.isFinite(nextRoundStart) && kickoff > nextRoundStart) return "postponed";
+  return undefined;
+}
+
 function getPlayerNextFixture(fixtures: MatchFixture[], competition: CompetitionName, club: string, fromMatchday: number) {
   const match = fixtures
     .filter((fixture) => fixture.competition === competition && fixture.matchday >= fromMatchday && fixture.status !== "final" && fixture.status !== "cancelled")
     .filter((fixture) => fixtureClubMatches(club, fixture.home) || fixtureClubMatches(club, fixture.homeShortName) || fixtureClubMatches(club, fixture.away) || fixtureClubMatches(club, fixture.awayShortName))
-    .sort((a, b) => a.matchday - b.matchday || new Date(a.kickoffAt ?? "9999-12-31").getTime() - new Date(b.kickoffAt ?? "9999-12-31").getTime())[0];
+    .sort((a, b) => {
+      const aKickoff = new Date(a.kickoffAt ?? "9999-12-31").getTime();
+      const bKickoff = new Date(b.kickoffAt ?? "9999-12-31").getTime();
+      return aKickoff - bKickoff || a.matchday - b.matchday;
+    })[0];
   if (!match) return undefined;
   const home = fixtureClubMatches(club, match.home) || fixtureClubMatches(club, match.homeShortName);
   const kickoff = match.kickoffAt ? new Date(match.kickoffAt) : null;
   const dateLabel = kickoff && !Number.isNaN(kickoff.getTime())
     ? `${kickoff.toLocaleDateString("es-ES", { weekday: "short", day: "2-digit", month: "short" })}${match.kickoffConfirmed ? ` · ${kickoff.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}` : " · hora pendiente"}`
     : "Fecha y hora pendientes";
-  return { matchday: match.matchday, venue: home ? "Casa" as const : "Visitante" as const, opponent: home ? match.away : match.home, dateLabel };
+  return { matchday: match.matchday, status: match.status, venue: home ? "Casa" as const : "Visitante" as const, opponent: home ? match.away : match.home, dateLabel };
 }
 
 function PlayerDetailSheet({ player, competition, fixtures = [], captain = false, matchday = 1, scoringRules, bench = [], marketPlayers = [], readOnly = false, onClose, onSwap, onCaptain, onRemove, notify = () => {} }: { player: InitialSquadPlayer; competition: CompetitionName; fixtures?: MatchFixture[]; captain?: boolean; matchday?: number; scoringRules: ScoringRule[]; bench?: InitialSquadPlayer[]; marketPlayers?: MarketPlayer[]; readOnly?: boolean; onClose: () => void; onSwap?: (incomingId: string) => void; onCaptain?: () => void; onRemove?: () => void; notify?: (message: string) => void }) {
@@ -8413,13 +8436,13 @@ function PlayerDetailSheet({ player, competition, fixtures = [], captain = false
               {COMPLETED_MATCHDAYS.size > 0 && trend && <TrendBars values={trend.history} />}
             </article>
             <article className={`next-fixture-card ${fixture?.venue === "Casa" ? "home" : "away"}`}>
-              <p className="eyebrow">PRÓXIMA JORNADA</p>
+              <p className="eyebrow">PRÓXIMO PARTIDO</p>
               {fixture ? (
                 <>
                   <div className="fixture-venue">
                     <span>{fixture.venue === "Casa" ? "⌂" : "↗"}</span>
                     <div>
-                      <small>JORNADA {fixture.matchday}</small>
+                      <small>JORNADA {fixture.matchday}{fixture.status === "postponed" ? " · APLAZADO" : ""}</small>
                       <strong>{fixture.venue === "Casa" ? "Juega en casa" : "Juega como visitante"}</strong>
                     </div>
                   </div>
@@ -9794,10 +9817,13 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
     const kickoffs = round.map((fixture) => fixture.kickoffAt ? new Date(fixture.kickoffAt) : null).filter((date): date is Date => Boolean(date && !Number.isNaN(date.getTime()))).sort((a, b) => a.getTime() - b.getTime());
     const allFinal = round.length > 0 && round.every((fixture) => fixture.status === "final");
     const anyLive = round.some((fixture) => fixture.status === "live");
-    const anyPostponed = round.some((fixture) => fixture.status === "postponed");
+    const exceptions = round.map((fixture) => getFixtureScheduleException(competitionFixtures, fixture));
+    const anyPostponed = exceptions.includes("postponed");
+    const anyAdvanced = exceptions.includes("advanced");
     return {
       number,
       status: allFinal ? "Finalizada" : anyLive ? "En juego" : anyPostponed ? "Aplazada" : "Programada",
+      anyAdvanced,
       date: kickoffs.length ? kickoffs[0].toLocaleDateString("es-ES", { day: "2-digit", month: "short" }) : "Pendiente",
       rank: 1, previousRank: 1, leagueAverage: 0, bestScore: 0, formation: "4-4-2",
     };
@@ -9810,6 +9836,13 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
   const selectedHistory = history.find((item) => item.matchday === selected.number);
   const finalized = selected.status === "Finalizada" || selected.status === "Recalculada" || selectedHistory?.state === "provisional" || selectedHistory?.state === "closed";
   const latestClosedMatchday = Math.max(0, ...history.filter((item) => item.state === "closed" || item.state === "provisional").map((item) => item.matchday));
+  const advancedFixtureToPrepare = competitionFixtures
+    .filter((fixture) => getFixtureScheduleException(competitionFixtures, fixture) === "advanced" && fixture.kickoffAt)
+    .filter((fixture) => {
+      const kickoff = new Date(fixture.kickoffAt as string).getTime();
+      return kickoff > Date.now() && kickoff <= Date.now() + settlementRules.lineupOpenHours * 60 * 60 * 1000;
+    })
+    .sort((a, b) => new Date(a.kickoffAt as string).getTime() - new Date(b.kickoffAt as string).getTime())[0];
   const historicalPlayer = (entry: NexoMatchdayHistory["players"][number]) =>
     squad?.players.find((player) => player.id === entry.playerId) ?? ({
       id: entry.playerId,
@@ -9867,7 +9900,7 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
     const kickoff = fixture.kickoffAt ? new Date(fixture.kickoffAt) : null;
     const dateLabel = kickoff && !Number.isNaN(kickoff.getTime()) ? kickoff.toLocaleDateString("es-ES", { weekday: "short", day: "2-digit", month: "short" }) : "Fecha pendiente";
     const timeLabel = fixture.kickoffConfirmed && kickoff ? kickoff.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "hora pendiente";
-    return { ...fixture, time: `${dateLabel} · ${timeLabel}`, homeGoals: fixture.homeScore, awayGoals: fixture.awayScore, myPlayers };
+    return { ...fixture, scheduleException: getFixtureScheduleException(competitionFixtures, fixture), time: `${dateLabel} · ${timeLabel}`, homeGoals: fixture.homeScore, awayGoals: fixture.awayScore, myPlayers };
   });
 
   return (
@@ -9894,6 +9927,17 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
           </div>
           <button onClick={() => onPrepareTeam(latestClosedMatchday ? latestClosedMatchday + 1 : selected.number)}>Preparar Jornada {latestClosedMatchday ? latestClosedMatchday + 1 : selected.number} →</button>
         </article>
+        {advancedFixtureToPrepare && (
+          <article className="urgent schedule-advanced-action">
+            <span>J{advancedFixtureToPrepare.matchday}</span>
+            <div>
+              <small>PARTIDO ADELANTADO · ALINEACIÓN INDEPENDIENTE</small>
+              <strong>{advancedFixtureToPrepare.home} – {advancedFixtureToPrepare.away}</strong>
+              <p>Se disputa antes de la jornada natural. Prepara ahora el once de la J{advancedFixtureToPrepare.matchday}; se bloqueará al comenzar este encuentro.</p>
+            </div>
+            <button onClick={() => onPrepareTeam(advancedFixtureToPrepare.matchday)}>Preparar Jornada {advancedFixtureToPrepare.matchday} →</button>
+          </article>
+        )}
         <footer>
           <span>{competitionFixtures.length ? `✓ ${competitionFixtures.length} partidos sincronizados` : "◷ Calendario pendiente"}</span>
           <p>{competitionFixtures.length ? "Consulta todas las jornadas y vuelve a sincronizar desde Administración cuando cambien los horarios." : "Las jornadas aparecerán cuando Administración realice la primera sincronización oficial."}</p>
@@ -9946,12 +9990,18 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
               <h3>{fixtures.length} partidos</h3>
               <p>Los jugadores de tu plantilla aparecen identificados en cada encuentro.</p>
             </div>
-            <span>{finalized ? "Resultados definitivos" : selected.status === "En juego" ? "Partidos en curso" : selected.status === "Aplazada" ? "Contiene aplazados" : "Horarios programados"}</span>
+            <span>{finalized ? "Resultados definitivos" : selected.status === "En juego" ? "Partidos en curso" : selected.status === "Aplazada" ? "Contiene aplazados" : selected.anyAdvanced ? "Contiene un adelantado" : "Horarios programados"}</span>
           </header>
-          {fixtures.some((fixture) => fixture.status === "postponed") && (
+          {fixtures.some((fixture) => fixture.scheduleException === "postponed") && (
             <article className="schedule-exception-notice postponed">
               <span>↻</span><div><strong>Esta jornada contiene un partido aplazado</strong><p>Conserva su jornada original y se actualizará cuando se dispute.</p></div>
               <b>POLÍTICA: {settlementRules.postponedPolicy === "provisional" ? "CIERRE PROVISIONAL" : "ESPERAR"}</b>
+            </article>
+          )}
+          {fixtures.some((fixture) => fixture.scheduleException === "advanced") && (
+            <article className="schedule-exception-notice advanced">
+              <span>⚡</span><div><strong>Esta jornada contiene un partido adelantado</strong><p>Conserva su jornada original y utiliza una alineación independiente que se bloquea al comenzar el encuentro.</p></div>
+              <b>REVISA SU FECHA REAL</b>
             </article>
           )}
           <div className="fixture-calendar-list">
@@ -9978,7 +10028,7 @@ function LeagueMatchdayView({ squad, competition, fixtures: allFixtures, scoring
                       ) : (
                         <>
                           <b>—</b>
-                          <em>{fixture.status === "live" ? "EN JUEGO" : fixture.status === "postponed" ? "APLAZADO" : "PRÓXIMO"}</em>
+                          <em>{fixture.status === "live" ? "EN JUEGO" : fixture.scheduleException === "postponed" ? "APLAZADO" : fixture.scheduleException === "advanced" ? "ADELANTADO" : "PRÓXIMO"}</em>
                           <b>—</b>
                         </>
                       )}

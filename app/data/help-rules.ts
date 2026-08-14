@@ -689,6 +689,7 @@ export const helpRules: HelpRule[] = [
     summary: "Cambiar la fecha de un partido nunca cambia la jornada deportiva a la que pertenece.",
     rules: [
       "Cada partido conserva siempre el identificador de su jornada oficial aunque se dispute antes, después o el mismo día que partidos de otra jornada.",
+      "La sincronización compara las fechas reales entre jornadas: si un encuentro queda después de iniciarse la siguiente se marca como aplazado; si se disputa antes de comenzar la jornada anterior se identifica como adelantado.",
       "Un partido aplazado permanece dentro de su jornada original y sus jugadores puntúan usando el once inmutable guardado para esa jornada.",
       "Administración define un margen de espera desde el final previsto de la jornada, de 48 horas por defecto.",
       "Con la política recomendada de cierre provisional, al vencer el margen se publican puntos y clasificación con los partidos terminados, identificando claramente que faltan encuentros.",
